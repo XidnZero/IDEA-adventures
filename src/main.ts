@@ -6,6 +6,7 @@ import { computeCameraOffset } from './engine/camera';
 import { renderRoom } from './render/renderRoom';
 import { renderAvatar } from './render/renderAvatar';
 import { hitTestProfileSwitcher, renderProfileSwitcher } from './ui/profileSwitcher';
+import { createNpcBounceState, getBounceOffsetPx, triggerNpcBounce } from './npc/npcTap';
 import { SPAWN_ROOM, TILE_PX } from './engine/config';
 
 const app = document.getElementById('app')!;
@@ -26,6 +27,7 @@ const avatars: Avatar[] = AVATAR_PROFILES.map((profile, i) =>
 let activeIndex = 0;
 
 const drag = createDragState();
+const npcBounce = createNpcBounceState();
 
 function resizeCanvas(): void {
   const dpr = window.devicePixelRatio || 1;
@@ -64,8 +66,20 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
 
-  canvas.setPointerCapture(e.pointerId);
   const p = pointerToWorldPx(e.clientX, e.clientY);
+
+  // Tapping a parent NPC directly triggers its one-tap response (R7)
+  // instead of starting a drag-walk toward that point.
+  const room = world.rooms[avatars[activeIndex].roomId];
+  const tx = Math.floor(p.x / TILE_PX);
+  const ty = Math.floor(p.y / TILE_PX);
+  const tile = room.grid[ty]?.[tx];
+  if (tile?.kind === 'object' && tile.isAnchor && tile.def.kind === 'npc') {
+    triggerNpcBounce(npcBounce, room.id, tx, ty, performance.now());
+    return;
+  }
+
+  canvas.setPointerCapture(e.pointerId);
   drag.active = true;
   drag.targetPxX = p.x;
   drag.targetPxY = p.y;
@@ -99,7 +113,7 @@ function frame(now: number): void {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, rect.width, rect.height);
   ctx.translate(-camera.x, -camera.y);
-  renderRoom(ctx, room);
+  renderRoom(ctx, room, (tx, ty) => getBounceOffsetPx(npcBounce, room.id, tx, ty, now));
   for (let i = 0; i < avatars.length; i++) {
     const avatar = avatars[i];
     if (avatar.roomId !== active.roomId) continue;

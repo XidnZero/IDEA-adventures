@@ -45,3 +45,9 @@ M:
   name: mirror
   footprint: [1, 1]
   color: "#dce9f0"
+
+P:
+  name: parent
+  footprint: [1, 1]
+  color: "#e0a458"
+  kind: npc

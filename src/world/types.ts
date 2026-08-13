@@ -5,6 +5,10 @@ export interface ObjectDef {
   footprint: [number, number]; // [width, height] in tiles
   color: string;
   need?: Need;
+  // Absent = ordinary furniture. 'npc' = a parent (R7): static, authored
+  // position, no pathfinding, gets a one-tap response instead of starting
+  // drag-steering when tapped directly.
+  kind?: 'npc';
 }
 
 export interface DoorDef {

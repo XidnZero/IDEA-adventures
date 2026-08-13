@@ -68,3 +68,16 @@ a portrait. Portraits distinguish kids by their layered placeholder palette
 (and later, real photo art) alone. Flagging this reading in case it's wrong
 — it's a plausible but not certain resolution of a real tension between two
 source docs.
+
+**2026-08-14 — Parent NPCs (R7) reuse the objects.yaml anchor/footprint
+system rather than a parallel `npcs:` room-header field.** `ObjectDef` gained
+an optional `kind: 'npc'` discriminator; a parent is authored as a normal
+single-char anchor (`P`) that blocks its tile like any other piece of
+furniture. One generic "parent" type, placed at two authored positions
+(living_room, kitchen) — nothing in phase-1.md calls for named/distinct
+parents yet, so a second type wasn't built. Tapping a parent tile plays a
+retriggerable bounce and consumes the pointer instead of starting
+drag-steering underneath it, the same pattern R16 interactables will use.
+No sound: audio approach (recorded voices vs. SFX) is still an open,
+unresolved item in phase-1.md, so this stays visual-only until that's
+decided.

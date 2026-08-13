@@ -7,7 +7,11 @@ const FLOOR_COLOR = '#f4ead9';
 const DOOR_MAT_COLOR = '#d8c9a3';
 const VOID_COLOR = '#000000';
 
-export function renderRoom(ctx: CanvasRenderingContext2D, room: RoomDef): void {
+export function renderRoom(
+  ctx: CanvasRenderingContext2D,
+  room: RoomDef,
+  getBounceOffsetPx?: (tx: number, ty: number) => number,
+): void {
   // Pass 1: base tiles. Object-covered tiles (anchor or footprint overflow)
   // sit on floor, so they're drawn as floor here too.
   for (let y = 0; y < room.height; y++) {
@@ -38,15 +42,22 @@ export function renderRoom(ctx: CanvasRenderingContext2D, room: RoomDef): void {
     for (let x = 0; x < room.width; x++) {
       const tile = room.grid[y][x];
       if (tile.kind === 'object' && tile.isAnchor) {
-        drawObject(ctx, x, y, tile.def);
+        const bounce = tile.def.kind === 'npc' ? (getBounceOffsetPx?.(x, y) ?? 0) : 0;
+        drawObject(ctx, x, y, tile.def, bounce);
       }
     }
   }
 }
 
-function drawObject(ctx: CanvasRenderingContext2D, tx: number, ty: number, def: ObjectDef): void {
+function drawObject(
+  ctx: CanvasRenderingContext2D,
+  tx: number,
+  ty: number,
+  def: ObjectDef,
+  bounceOffsetPx: number,
+): void {
   const px = tx * TILE_PX;
-  const py = ty * TILE_PX;
+  const py = ty * TILE_PX + bounceOffsetPx;
   const w = def.footprint[0] * TILE_PX;
   const h = def.footprint[1] * TILE_PX;
 
@@ -127,6 +138,12 @@ function drawGlyph(
       ctx.beginPath();
       ctx.moveTo(px + w * 0.2, py + h * 0.4);
       ctx.lineTo(px + w * 0.8, py + h * 0.4);
+      ctx.stroke();
+      break;
+    case 'parent':
+      ctx.beginPath();
+      ctx.arc(cx, cy - h * 0.18, w * 0.22, 0, Math.PI * 2);
+      ctx.fill();
       ctx.stroke();
       break;
     default:
