@@ -11,6 +11,7 @@ export function renderRoom(
   ctx: CanvasRenderingContext2D,
   room: RoomDef,
   getBounceOffsetPx?: (tx: number, ty: number) => number,
+  isNight?: boolean,
 ): void {
   // Pass 1: base tiles. Object-covered tiles (anchor or footprint overflow)
   // sit on floor, so they're drawn as floor here too.
@@ -47,10 +48,30 @@ export function renderRoom(
         // tapping them opens the overlay instead.
         const bounces = tile.def.kind === 'npc' || tile.def.kind === 'interactable';
         const bounce = bounces ? (getBounceOffsetPx?.(x, y) ?? 0) : 0;
+        // R18: lamps stay visibly lit at night — the only "interior light"
+        // object authored so far (see docs/decisions.md). Drawn as a soft
+        // warm glow behind the lamp, purely from `isNight` (day/night clock,
+        // R19) — nothing here reads or touches need state.
+        if (isNight && tile.def.name === 'lamp') {
+          drawLampGlow(ctx, x, y, tile.def);
+        }
         drawObject(ctx, x, y, tile.def, bounce);
       }
     }
   }
+}
+
+function drawLampGlow(ctx: CanvasRenderingContext2D, tx: number, ty: number, def: ObjectDef): void {
+  const cx = tx * TILE_PX + (def.footprint[0] * TILE_PX) / 2;
+  const cy = ty * TILE_PX + (def.footprint[1] * TILE_PX) / 2;
+  const r = TILE_PX * 1.6;
+  const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  gradient.addColorStop(0, 'rgba(255,224,140,0.55)');
+  gradient.addColorStop(1, 'rgba(255,224,140,0)');
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawObject(

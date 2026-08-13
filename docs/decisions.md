@@ -179,3 +179,134 @@ code-drawn, no text) that's always present and always live — tapping it
 anywhere in its radius closes the overlay immediately regardless of drag
 state, satisfying "every state has a one-tap exit" without any instructional
 copy ("tap here to exit" was explicitly out per CLAUDE.md).
+
+**2026-08-14 — R18/R19 shipped: day/night lighting + the clock-separation
+hard wall.** `src/engine/dayNight.ts` is now the *only* module in the
+codebase permitted to read the device's wall-clock; it exports
+`getLightingState(date = new Date())`, a pure function of an optional `Date`
+that returns a flat `{r,g,b,alpha,isNight}` tint. It takes no `sessionMs`
+input, is never imported by `needState.ts`, and `needState.ts`/`main.ts`'s
+`sessionMs` accumulation is untouched by this work — the dependency edge
+points one way and terminates in this one file. `main.ts` recomputes
+`lighting` from `getLightingState()` once per frame (a fresh `new Date()`
+read every time, deliberately not cached/derived from anything else) and
+draws it as a flat `fillRect` tint *after* `ctx.restore()` — i.e. in screen
+space, after the camera transform, so it's uniform across the viewport and
+structurally cannot introduce parallax/camera drift (R1). `isNight` is
+threaded into `renderRoom()` as a plain boolean and used to draw a soft
+radial glow behind `lamp` objects (`R16`'s only existing "interior light"
+furniture) — spec.md's R18 also mentions windows, but no window object
+exists in the authored rooms yet, so only lamps light up; flagging this as a
+partial reading of R18, easy to extend once a window object is authored.
+Kept deliberately unambitious on realism (dawn/dusk are a `smoothstep` over
+a plain day/night color lerp) per the build brief — the point of this
+R-item is the clock separation, not lighting fidelity.
+
+Proved the separation two ways. (1) Structural: `grep -rn "Date" src/` shows
+exactly one file touching the wall clock — `dayNight.ts` — and neither
+`needState.ts` nor `main.ts`'s `sessionMs` line reference it. (2) Dynamic,
+via a temporary Playwright-visible debug hook (`window.__debugClock`,
+exposing `sessionMs()` and `lighting()`, removed before the final
+typecheck+build pass — same catch-and-release pattern as the R11-14 debug
+hook): froze `Date`/`Date.now()` completely (never advancing, for the whole
+run) via `page.addInitScript`, sampled both clocks, waited 2.2 real seconds,
+sampled again. Result: `lighting` was byte-identical before/after (proves it
+only ever reads the frozen `Date`), while `sessionMs` had advanced by
+~2217ms over the real 2200ms wait (proves it's driven by rAF delta-time,
+completely unaffected by freezing `Date`). Separately mocked `Date` to a
+fixed 2am vs. a fixed 2pm and confirmed `isNight`/tint differ correctly and
+visibly (screenshots). All four scripts live in the Playwright scratchpad
+used for this session, not in the repo.
+
+**2026-08-14 — R20 shipped: parent gate via a sustained-still hold in the
+screen's bottom-right corner, ~3.5s, ~24px jitter tolerance.** Chosen
+specifically to *not* need a third movement/input system: `main.ts`'s
+existing single pointerdown/move/up chain gained a side-channel
+(`gateHold`/`gateOpen`) that only ever watches pointer state — it never
+blocks or alters any existing behavior (drag-steer, need-bubble tap, object
+tap) unless it actually fires. A pointerdown landing in the fixed 140x140px
+bottom-right zone (screen space, not world/camera — chosen because it's
+empty during normal play: the profile switcher lives top-left, the need
+bubble tracks the avatar which is usually mid-screen, and the mini-game's
+own exit glyph, when that overlay is open, is top-right and never
+overlapping since the gate is disabled entirely while the mini-game owns
+input) starts a hold timer; any movement past ~24px or any pointerup cancels
+it; only surviving untouched for the full 3.5s opens the gate. This is
+judged hard for a 2-3yo to trigger by accident because: normal play in that
+corner (a quick tap, a drag that passes through it) still does exactly what
+it would anywhere else, so there's no behavior change to stumble into; and
+the one gesture that *does* open it — pressing down and holding
+motionless for over three seconds in one specific, visually blank spot — is
+the opposite of how toddlers interact with a touchscreen (Phase-0-observed
+whole-hand taps and drags, not sustained stillness). Verified with
+Playwright: a quick tap and a normal mid-screen drag both leave the gate
+closed; a 4-second still hold in the corner opens it; releasing alone does
+not close it (must be an explicit tap); a tap anywhere then closes it
+(one-tap exit, R10).
+
+The gate currently opens a full-screen dimmed placeholder panel (plain ring
++ dot, no text, no real controls) — **explicitly a placeholder**, flagged
+here per the build brief: there is no "browser chrome" to exit to yet (that
+depends on R21, shipped in this same session, but wiring the gate to an
+actual exit/close action is out of scope for this pass). The gate proves it
+does something distinguishable and has a one-tap way back; wiring it to a
+real destination is future work once there's an actual installed/fullscreen
+context to exit from.
+
+**2026-08-14 — R21/R22 shipped: installable, fullscreen-capable, offline
+PWA shell.** `public/manifest.webmanifest` (`display: "fullscreen"`,
+`name`/`short_name: "IDEA adventures"`) is linked from `index.html` alongside
+`theme-color`/`apple-mobile-web-app-capable` meta tags. Read `name` as OS
+chrome metadata (install dialog / home-screen label), not in-app content —
+the same reasoning already applied to `<title>` in `index.html`, which
+predates this session and was never flagged as a text violation; flagging
+this reading here too in case it's wrong. Icons are two PNGs
+(192/512, `any` + `maskable`) generated by literally drawing them with
+canvas primitives in a headless-Chromium script and exporting
+`toDataURL('image/png')` — the same code-drawn-placeholder technique this
+project already uses for every other visual asset slot, just rasterized
+once at build time instead of every frame; the script isn't part of the
+repo (scratchpad-only), so regenerating the icons later means rerunning
+that pattern or dropping in real art.
+
+`public/sw.js` is a hand-written service worker (no build-time-generated
+precache manifest, since there's no `vite-plugin-pwa` dependency and the
+brief scoped this to shell/manifest/SW plumbing, not new tooling). On
+`install`, it fetches `/index.html`, regex-scans it for every `src=`/`href=`
+it references (the built hashed JS bundle, the manifest, the icons — whatever
+is actually linked, so nothing needs to be hand-listed or kept in sync with
+Vite's hashed output names) and caches all of it. The `fetch` handler is
+cache-first with a background refresh for anything already cached, and
+network-first-with-cache-fallback for anything not yet cached. World data
+needed no new caching consideration — it's already bundled into the JS at
+build time via `?raw` imports (see the 2026-08-14 Vite/TS entry above), so
+there's nothing to fetch there at all, offline or online.
+
+One deliberate carve-out: requests to `/assets/<name>.png` (the
+`requestAsset()` art-fallback slots) are handled specially rather than
+through the generic cache-first path, because `/assets/` collides with
+Vite's own build output directory (`/assets/index-<hash>.js` lives at the
+same prefix) — an early version of this carve-out accidentally excluded the
+JS bundle itself from caching by matching on the `/assets/` prefix alone;
+fixed by also requiring a `.png` extension. With that fixed, these
+requests still try the network first (so real art, once it exists, loads
+and gets cached normally), but a network failure — the *only* case that
+happens today, since no real art exists yet — resolves to a harmless empty
+`200` response instead of letting the failure propagate, because a genuine
+`404` from a live server is silent in the browser console but a raw
+service-worker-observed network failure (or an explicit non-2xx Response
+returned from `respondWith`) is not; an empty `200` still fails to decode as
+an image, so `requestAsset()`'s existing `onerror` fallback fires exactly as
+it does online today — just without spurious console noise. Verified with
+Playwright end-to-end against a real `vite build` + `vite preview` (not just
+the dev server, to avoid Vite's dev-only HMR-websocket console noise
+skewing the "zero errors" check): manifest fetches and validates, service
+worker reaches `active` and takes control, and — with `context.setOffline(true)`
+after one prior online load — the app reloads, renders, and a drag visibly
+moves the avatar, with zero console/page errors throughout.
+
+Both this session's temporary Playwright-visible debug hook
+(`window.__debugClock`, used for the R19 proof above and a `gateOpen()`
+check for the R20 proof) were removed before the final `tsc -b` +
+`vite build` pass, per this project's established convention (see the
+R11-14 entry above) — grepped for `__debug`/`TEMP` afterward to confirm.

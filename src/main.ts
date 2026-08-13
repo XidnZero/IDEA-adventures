@@ -23,6 +23,11 @@ import {
   updateToyboxSort,
   type ToyboxSortState,
 } from './minigame/toyboxSort';
+import { getLightingState, type LightingState } from './engine/dayNight';
+import { GATE_HOLD_MS, GATE_JITTER_PX, inGateZone, renderParentGate } from './ui/parentGate';
+import { registerServiceWorker } from './engine/registerServiceWorker';
+
+registerServiceWorker();
 
 const app = document.getElementById('app')!;
 const canvas = document.createElement('canvas');
@@ -51,6 +56,17 @@ const autoWalkStates: Array<AutoWalkState | null> = avatars.map(() => null);
 // R17 mini-game shell: null = world is showing; otherwise the toybox-sort
 // overlay owns all rendering and pointer input until its exit icon is tapped.
 let miniGame: ToyboxSortState | null = null;
+
+// R18/R19: lighting reads the device's real clock (see engine/dayNight.ts —
+// the *only* module allowed to do that). Recomputed every frame from
+// `new Date()`; deliberately never derived from or fed into `sessionMs`.
+let lighting: LightingState = getLightingState();
+
+// R20 parent gate: a side-channel that watches pointer state without ever
+// altering normal drag-steer/tap behavior unless it actually fires. See
+// docs/decisions.md for the exact gesture and its reasoning.
+let gateHold: { startMs: number; startX: number; startY: number } | null = null;
+let gateOpen = false;
 
 // Light-touch R15: a parent NPC in the room where a need resolves bounces
 // in place. Parents are static (R7 — no pathfinding), so this stands in for
@@ -98,6 +114,23 @@ canvas.addEventListener('pointerdown', (e) => {
   const rect = canvas.getBoundingClientRect();
   const screenX = e.clientX - rect.left;
   const screenY = e.clientY - rect.top;
+
+  // R20 parent gate: tracked as an independent side-channel, never
+  // preempting anything below — a normal tap/drag in this corner still does
+  // exactly what it would anywhere else. Only fires from main.ts's frame()
+  // loop once held, unmoved, for GATE_HOLD_MS. Disabled while the mini-game
+  // owns input (it has its own full-screen exit already).
+  if (!miniGame && !gateOpen && inGateZone(screenX, screenY, rect.width, rect.height)) {
+    gateHold = { startMs: performance.now(), startX: screenX, startY: screenY };
+  } else {
+    gateHold = null;
+  }
+
+  if (gateOpen) {
+    // Tap anywhere to close — one-tap exit from every state (R10/CLAUDE.md).
+    gateOpen = false;
+    return;
+  }
 
   // R17 mini-game overlay: while open, it owns all input. Its own input
   // model (drag-a-shape) is declared entirely inside toyboxSort.ts — this is
@@ -170,8 +203,19 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 canvas.addEventListener('pointermove', (e) => {
   const rect = canvas.getBoundingClientRect();
+  const screenX = e.clientX - rect.left;
+  const screenY = e.clientY - rect.top;
+
+  // Any real movement cancels an in-progress gate hold — the gesture
+  // requires sustained *stillness*, which ordinary drag-steering play never
+  // produces (see docs/decisions.md).
+  if (gateHold && Math.hypot(screenX - gateHold.startX, screenY - gateHold.startY) > GATE_JITTER_PX) {
+    gateHold = null;
+  }
+
+  if (gateOpen) return;
   if (miniGame) {
-    handleToyboxPointerMove(miniGame, e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height);
+    handleToyboxPointerMove(miniGame, screenX, screenY, rect.width, rect.height);
     return;
   }
   if (!drag.active) return;
@@ -180,6 +224,10 @@ canvas.addEventListener('pointermove', (e) => {
   drag.targetPxY = p.y;
 });
 function releaseDrag(): void {
+  // Releasing the pointer always cancels an in-progress gate hold — it must
+  // stay pressed, unmoved, for the full duration.
+  gateHold = null;
+  if (gateOpen) return;
   if (miniGame) {
     const rect = canvas.getBoundingClientRect();
     handleToyboxPointerUp(miniGame, rect.width, rect.height, performance.now());
@@ -195,7 +243,20 @@ let lastTime = performance.now();
 function frame(now: number): void {
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
-  sessionMs += dt * 1000;
+  sessionMs += dt * 1000; // foreground play-time clock only (R13/R19) — never Date.now().
+
+  // R18/R19: recomputed from the device's real clock every frame, entirely
+  // independent of `sessionMs` above — see engine/dayNight.ts.
+  lighting = getLightingState();
+
+  // R20: the gate only actually opens here, once a tracked hold (started in
+  // pointerdown, cancellable by pointermove/pointerup) has survived
+  // GATE_HOLD_MS untouched.
+  if (gateHold && now - gateHold.startMs >= GATE_HOLD_MS) {
+    gateOpen = true;
+    gateHold = null;
+    drag.active = false;
+  }
 
   for (let i = 0; i < avatars.length; i++) {
     const avatar = avatars[i];
@@ -223,7 +284,11 @@ function frame(now: number): void {
 
   const rect = canvas.getBoundingClientRect();
 
-  if (miniGame) {
+  if (gateOpen) {
+    // R20: placeholder panel, see docs/decisions.md — nothing else renders
+    // underneath while it's up.
+    renderParentGate(ctx, rect.width, rect.height);
+  } else if (miniGame) {
     // Full-screen overlay (R17): world, avatars, need bubbles, and the
     // profile switcher are all hidden while it's open — it owns the screen.
     updateToyboxSort(miniGame, now);
@@ -237,7 +302,12 @@ function frame(now: number): void {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.translate(-camera.x, -camera.y);
-    renderRoom(ctx, room, (tx, ty) => getTapResponseOffsetPx(tapResponse, room.id, tx, ty, now));
+    renderRoom(
+      ctx,
+      room,
+      (tx, ty) => getTapResponseOffsetPx(tapResponse, room.id, tx, ty, now),
+      lighting.isNight,
+    );
     for (let i = 0; i < avatars.length; i++) {
       const avatar = avatars[i];
       if (avatar.roomId !== active.roomId) continue;
@@ -248,6 +318,14 @@ function frame(now: number): void {
     if (activeNeed) {
       renderNeedBubble(ctx, active, activeNeed, now);
     }
+    ctx.restore();
+
+    // R18: flat ambient screen-space tint, drawn after the camera transform
+    // is restored — it's uniform across the viewport, not tied to world
+    // position, so it can never introduce parallax/camera drift (R1).
+    ctx.save();
+    ctx.fillStyle = `rgba(${lighting.r},${lighting.g},${lighting.b},${lighting.alpha})`;
+    ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.restore();
 
     renderProfileSwitcher(
