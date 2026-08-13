@@ -1,5 +1,7 @@
 import type { Avatar } from '../avatar/avatar';
+import type { Need } from '../world/types';
 import { drawLayeredAvatar } from '../render/renderAvatar';
+import { drawNeedIcon } from '../render/renderNeedBubble';
 
 /**
  * R6 profile switching: tap a portrait to choose who you're caring for.
@@ -24,6 +26,7 @@ export function renderProfileSwitcher(
   ctx: CanvasRenderingContext2D,
   avatars: Avatar[],
   activeIndex: number,
+  needs: Array<Need | null>,
 ): void {
   avatars.forEach((avatar, i) => {
     const { x: cx, y: cy } = portraitCenter(i);
@@ -45,6 +48,23 @@ export function renderProfileSwitcher(
     ctx.lineWidth = i === activeIndex ? 6 : 2;
     ctx.strokeStyle = i === activeIndex ? '#ffd23f' : 'rgba(0,0,0,0.25)';
     ctx.stroke();
+
+    // Small calm badge, same icon language as the in-world need bubble —
+    // lets the caregiver notice a need on the avatar they're not controlling.
+    const need = needs[i];
+    if (need) {
+      const badgeX = cx + PORTRAIT_RADIUS * 0.72;
+      const badgeY = cy - PORTRAIT_RADIUS * 0.72;
+      const badgeR = PORTRAIT_RADIUS * 0.36;
+      ctx.beginPath();
+      ctx.arc(badgeX, badgeY, badgeR, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      drawNeedIcon(ctx, need, badgeX, badgeY, badgeR * 0.75);
+    }
   });
 }
 

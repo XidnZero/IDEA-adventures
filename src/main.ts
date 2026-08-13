@@ -2,11 +2,16 @@ import { loadWorld } from './world/loadWorld';
 import type { Avatar } from './avatar/avatar';
 import { AVATAR_PROFILES, createAvatar, tileCenterPx } from './avatar/avatar';
 import { createDragState, stepDragSteer } from './movement/dragSteer';
+import { startAutoWalk, isAutoWalkDone, stepAutoWalk, type AutoWalkState } from './movement/autoWalk';
+import { findPath } from './movement/bfsPath';
 import { computeCameraOffset } from './engine/camera';
 import { renderRoom } from './render/renderRoom';
 import { renderAvatar } from './render/renderAvatar';
+import { renderNeedBubble, hitTestNeedBubble } from './render/renderNeedBubble';
 import { hitTestProfileSwitcher, renderProfileSwitcher } from './ui/profileSwitcher';
 import { createNpcBounceState, getBounceOffsetPx, triggerNpcBounce } from './npc/npcTap';
+import { createNeedState, advanceNeedState, resolveNeed, type AvatarNeedState } from './needs/needState';
+import { findNeedTarget } from './needs/needTargets';
 import { SPAWN_ROOM, TILE_PX } from './engine/config';
 
 const app = document.getElementById('app')!;
@@ -28,6 +33,26 @@ let activeIndex = 0;
 
 const drag = createDragState();
 const npcBounce = createNpcBounceState();
+
+let sessionMs = 0; // foreground play-time clock only (R13/R19) — never Date.now().
+const needStates: AvatarNeedState[] = avatars.map(() => createNeedState(sessionMs));
+const autoWalkStates: Array<AutoWalkState | null> = avatars.map(() => null);
+
+// Light-touch R15: a parent NPC in the room where a need resolves bounces
+// in place. Parents are static (R7 — no pathfinding), so this stands in for
+// "comes over" without literally moving the NPC across the room.
+function celebrateInRoom(roomId: string, now: number): void {
+  const room = world.rooms[roomId];
+  for (let y = 0; y < room.height; y++) {
+    for (let x = 0; x < room.width; x++) {
+      const tile = room.grid[y][x];
+      if (tile.kind === 'object' && tile.isAnchor && tile.def.kind === 'npc') {
+        triggerNpcBounce(npcBounce, roomId, x, y, now);
+        return;
+      }
+    }
+  }
+}
 
 function resizeCanvas(): void {
   const dpr = window.devicePixelRatio || 1;
@@ -52,8 +77,9 @@ function pointerToWorldPx(clientX: number, clientY: number): { x: number; y: num
 
 // Hold-and-drag: press anywhere in the world and the active avatar
 // continuously walks toward the pointer while held (R8) — not
-// single-tap-to-point. A tap on a profile portrait is handled first and
-// consumes the pointer instead of starting a drag underneath it.
+// single-tap-to-point. A tap on a profile portrait, a need bubble, or a
+// parent NPC is handled first and consumes the pointer instead of starting
+// a drag underneath it.
 canvas.addEventListener('pointerdown', (e) => {
   const rect = canvas.getBoundingClientRect();
   const screenX = e.clientX - rect.left;
@@ -67,19 +93,41 @@ canvas.addEventListener('pointerdown', (e) => {
   }
 
   const p = pointerToWorldPx(e.clientX, e.clientY);
+  const active = avatars[activeIndex];
+  const now = performance.now();
 
-  // Tapping a parent NPC directly triggers its one-tap response (R7)
-  // instead of starting a drag-walk toward that point.
-  const room = world.rooms[avatars[activeIndex].roomId];
+  // Need-bubble tap (R9 auto-walk trigger): only the active avatar's bubble
+  // is ever shown, so it's always exactly what's tappable — no dead taps.
+  const activeNeed = needStates[activeIndex].active;
+  if (hitTestNeedBubble(active, activeNeed, p.x, p.y, now) && activeNeed) {
+    const target = findNeedTarget(world, activeNeed);
+    if (target) {
+      const from = {
+        roomId: active.roomId,
+        tx: Math.floor(active.x / TILE_PX),
+        ty: Math.floor(active.y / TILE_PX),
+      };
+      const path = findPath(world, from, target);
+      if (path) {
+        autoWalkStates[activeIndex] = startAutoWalk(path);
+        drag.active = false;
+      }
+    }
+    return;
+  }
+
+  // Parent NPC tap (R7): plays its one-tap response instead of starting a drag-walk.
+  const room = world.rooms[active.roomId];
   const tx = Math.floor(p.x / TILE_PX);
   const ty = Math.floor(p.y / TILE_PX);
   const tile = room.grid[ty]?.[tx];
   if (tile?.kind === 'object' && tile.isAnchor && tile.def.kind === 'npc') {
-    triggerNpcBounce(npcBounce, room.id, tx, ty, performance.now());
+    triggerNpcBounce(npcBounce, room.id, tx, ty, now);
     return;
   }
 
   canvas.setPointerCapture(e.pointerId);
+  autoWalkStates[activeIndex] = null; // manual control always takes over from auto-walk
   drag.active = true;
   drag.targetPxX = p.x;
   drag.targetPxY = p.y;
@@ -101,10 +149,33 @@ let lastTime = performance.now();
 function frame(now: number): void {
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
+  sessionMs += dt * 1000;
+
+  for (let i = 0; i < avatars.length; i++) {
+    const avatar = avatars[i];
+    const prevX = avatar.x;
+    const prevY = avatar.y;
+
+    if (i === activeIndex && drag.active) {
+      stepDragSteer(world, avatar, drag, dt);
+    } else if (autoWalkStates[i]) {
+      stepAutoWalk(world, avatar, autoWalkStates[i]!, dt);
+    }
+
+    const isMoving = Math.hypot(avatar.x - prevX, avatar.y - prevY) > 0.01;
+    advanceNeedState(needStates[i], sessionMs, dt, isMoving);
+
+    const walk = autoWalkStates[i];
+    if (walk && isAutoWalkDone(walk)) {
+      if (needStates[i].active !== null) {
+        resolveNeed(needStates[i], sessionMs);
+        celebrateInRoom(avatar.roomId, now);
+      }
+      autoWalkStates[i] = null;
+    }
+  }
 
   const active = avatars[activeIndex];
-  stepDragSteer(world, active, drag, dt);
-
   const room = world.rooms[active.roomId];
   const rect = canvas.getBoundingClientRect();
   const camera = cameraForActive(rect.width, rect.height);
@@ -120,9 +191,18 @@ function frame(now: number): void {
     const pose = i === activeIndex && drag.active ? 'walk' : 'idle';
     renderAvatar(ctx, avatar, pose);
   }
+  const activeNeed = needStates[activeIndex].active;
+  if (activeNeed) {
+    renderNeedBubble(ctx, active, activeNeed, now);
+  }
   ctx.restore();
 
-  renderProfileSwitcher(ctx, avatars, activeIndex);
+  renderProfileSwitcher(
+    ctx,
+    avatars,
+    activeIndex,
+    needStates.map((s) => s.active),
+  );
 
   requestAnimationFrame(frame);
 }

@@ -81,3 +81,52 @@ drag-steering underneath it, the same pattern R16 interactables will use.
 No sound: audio approach (recorded voices vs. SFX) is still an open,
 unresolved item in phase-1.md, so this stays visual-only until that's
 decided.
+
+**2026-08-14 — Care loop (R11-14) shipped: needs, causal chaining, and R9's
+BFS auto-walk finally wired to a real trigger.** Per-avatar need state
+(`src/needs/needState.ts`) runs entirely off the foreground session clock
+accumulated in the render loop (`sessionMs`, driven by clamped rAF `dt`) —
+never `Date.now()` — so it's naturally frozen while the app is backgrounded
+or closed (R13) and has zero contact with the day/night clock (R19's hard
+wall). One need at a time, 3-5 minute pacing, eating causally leads to a
+washroom need ~45s later, and enough accumulated drag-steering/auto-walk
+movement leads to hygiene. Needs are communicated *only* via a calm,
+retriggerable, photographic-literal icon bubble (bowl/toilet/droplet) above
+the avatar's head, plus a matching small badge on that avatar's portrait —
+never a bar, number, or change to the avatar's own body language. R5's
+need-state poses ("fidget, hold tummy, look at door") are deliberately not
+built yet; adding real body-language poses is riskier to get right than a
+neutral icon under R14's zero-distress rule, so it's deferred rather than
+attempted half-right. Tapping the bubble runs a real cross-room BFS path
+(`findNeedTarget` picks the correct fixture, defaulting to `toilet_kitchen`
+for washroom per R9) and hands it to the auto-walk system built earlier.
+R15 ("parent comes over") is implemented as a stationary celebration — the
+parent NPC in the resolution room bounces in place — since R7 explicitly
+forbids NPC pathfinding; literally walking the parent across the room would
+violate that.
+
+Ran an explicit R14 negative-test pass over this code: nothing in
+`needState.ts`, `renderNeedBubble.ts`, or `renderAvatar.ts` has any concept
+of elapsed-unmet-need severity, a fail state, or a body-language/pose change
+tied to need state — `renderAvatar`'s pose only ever reflects whether the
+avatar is currently being dragged, never which need (if any) is active. An
+unresolved need just sits there calmly, forever, blocking new needs (one at
+a time) but never escalating, decaying, or rendering differently. No input
+sequence or inaction can produce distress because the code has nothing that
+*could* render distress.
+
+Found and fixed two correctness bugs while building this: (1) `autoWalk.ts`
+was relying on `dragSteer.ts`'s floor-position-based door crossing, which
+could fire mid-step — before the avatar reached the tile-center threshold
+`stepAutoWalk` used to advance its own path index — permanently
+desyncing the walk from its path (avatar would cross into the next room but
+freeze at the spawn tile forever). Fixed by having `autoWalk.ts` handle
+door-crossing itself, tied directly to path-node consumption instead of a
+generic position check. (2) `resolveNeed` was unconditionally overwriting
+`pendingWashroomAtMs` on every hunger resolution, which could perpetually
+delay an already-caused washroom need if hunger re-triggered before the
+causal delay elapsed; fixed by only scheduling it if nothing is already
+pending. Both were caught via a temporary debug hook exposing live state to
+Playwright (never shipped) after visually confirming the auto-walk was
+stalling in the browser — screenshots alone weren't enough to diagnose the
+frame-by-frame desync.

@@ -1,12 +1,12 @@
 import type { RoomDef, World } from '../world/types';
-import type { Avatar, Direction } from '../avatar/avatar';
-import { tileCenterPx } from '../avatar/avatar';
+import type { Avatar } from '../avatar/avatar';
 import { AVATAR_RADIUS_TILES, AVATAR_SPEED_TILES_PER_SEC, TILE_PX } from '../engine/config';
+import { crossDoorIfOnDoor, pickFacing } from './shared';
 
 /**
  * Hold-and-drag world movement (R8). Continuous pointer-following, not
  * single-tap-to-point. This is a deliberately separate code path from the
- * BFS waypoint auto-walk in bfsPath.ts — the Phase 0 spike hit stutter bugs
+ * BFS waypoint auto-walk in autoWalk.ts — the Phase 0 spike hit stutter bugs
  * when the two were mixed (recomputing a path every pointer-move fought the
  * avatar's current step). See docs/decisions.md.
  */
@@ -39,25 +39,6 @@ function avatarFits(room: RoomDef, cx: number, cy: number): boolean {
   );
 }
 
-function pickFacing(dx: number, dy: number, current: Direction): Direction {
-  if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return current;
-  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
-}
-
-function maybeCrossDoor(world: World, avatar: Avatar): void {
-  const room = world.rooms[avatar.roomId];
-  const tx = Math.floor(avatar.x / TILE_PX);
-  const ty = Math.floor(avatar.y / TILE_PX);
-  const tile = room.grid[ty]?.[tx];
-  if (tile?.kind !== 'door') return;
-
-  const target = world.rooms[tile.door.to];
-  const center = tileCenterPx(tile.door.spawn[0], tile.door.spawn[1]);
-  avatar.roomId = target.id;
-  avatar.x = center.x;
-  avatar.y = center.y;
-}
-
 export function stepDragSteer(world: World, avatar: Avatar, drag: DragState, dtSeconds: number): void {
   if (!drag.active) return;
   const room = world.rooms[avatar.roomId];
@@ -83,5 +64,5 @@ export function stepDragSteer(world: World, avatar: Avatar, drag: DragState, dtS
 
   avatar.facing = pickFacing(dx, dy, avatar.facing);
 
-  maybeCrossDoor(world, avatar);
+  crossDoorIfOnDoor(world, avatar);
 }
