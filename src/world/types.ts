@@ -5,10 +5,15 @@ export interface ObjectDef {
   footprint: [number, number]; // [width, height] in tiles
   color: string;
   need?: Need;
-  // Absent = ordinary furniture. 'npc' = a parent (R7): static, authored
-  // position, no pathfinding, gets a one-tap response instead of starting
-  // drag-steering when tapped directly.
-  kind?: 'npc';
+  // Absent = ordinary furniture (no tap response, blocks its footprint).
+  // 'npc' = a parent (R7): static, authored position, no pathfinding, gets
+  // a one-tap bounce response instead of starting drag-steering when tapped.
+  // 'interactable' = R16: tap plays the same retriggerable bounce response
+  // as an NPC (see src/interaction/tapResponse.ts) — infinitely repeatable,
+  // no state, no fail path.
+  // 'minigame' = tapping it launches a full-screen mini-game overlay (R17)
+  // instead of a bounce; entry is diegetic (tap the object in the world).
+  kind?: 'npc' | 'interactable' | 'minigame';
 }
 
 export interface DoorDef {

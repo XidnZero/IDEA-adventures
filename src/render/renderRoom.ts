@@ -42,7 +42,11 @@ export function renderRoom(
     for (let x = 0; x < room.width; x++) {
       const tile = room.grid[y][x];
       if (tile.kind === 'object' && tile.isAnchor) {
-        const bounce = tile.def.kind === 'npc' ? (getBounceOffsetPx?.(x, y) ?? 0) : 0;
+        // NPCs and R16 interactables share the same retriggerable bounce
+        // response; minigame-launcher objects (the toybox) don't bounce —
+        // tapping them opens the overlay instead.
+        const bounces = tile.def.kind === 'npc' || tile.def.kind === 'interactable';
+        const bounce = bounces ? (getBounceOffsetPx?.(x, y) ?? 0) : 0;
         drawObject(ctx, x, y, tile.def, bounce);
       }
     }
@@ -144,6 +148,26 @@ function drawGlyph(
       ctx.beginPath();
       ctx.arc(cx, cy - h * 0.18, w * 0.22, 0, Math.PI * 2);
       ctx.fill();
+      ctx.stroke();
+      break;
+    case 'toy':
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.min(w, h) * 0.28, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      break;
+    case 'lamp':
+      ctx.beginPath();
+      ctx.moveTo(cx - w * 0.2, cy + h * 0.25);
+      ctx.lineTo(cx + w * 0.2, cy + h * 0.25);
+      ctx.lineTo(cx + w * 0.1, cy - h * 0.2);
+      ctx.lineTo(cx - w * 0.1, cy - h * 0.2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      break;
+    case 'frame':
+      roundRect(ctx, px + w * 0.25, py + h * 0.2, w * 0.5, h * 0.6, 4);
       ctx.stroke();
       break;
     default:

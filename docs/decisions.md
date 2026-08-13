@@ -130,3 +130,52 @@ pending. Both were caught via a temporary debug hook exposing live state to
 Playwright (never shipped) after visually confirming the auto-walk was
 stalling in the browser — screenshots alone weren't enough to diagnose the
 frame-by-frame desync.
+
+**2026-08-14 — R16/R17 shipped: interactables + toybox-sort mini-game.**
+`src/npc/npcTap.ts` (R7's bounce) is generalized into
+`src/interaction/tapResponse.ts` — same keyed-by-(roomId,tx,ty) retriggerable
+bounce timer, now used by both parent NPCs and R16 interactables, since
+they're the same mechanic (tap → instant animated response, infinitely
+repeatable, no state machine). `ObjectDef.kind` widened from `'npc'` to
+`'npc' | 'interactable' | 'minigame'`: `interactable` reuses the shared
+bounce; `minigame` (only the toybox, `X`) skips the bounce and instead opens
+the R17 overlay. Wired generically in `main.ts`'s pointerdown handler and in
+`renderRoom.ts`'s bounce lookup — neither cares which specific object it is,
+only its `kind`.
+
+New interactable object types added to `world/objects.yaml`: `Y` toy, `L`
+lamp, `R` frame (picture), plus `M` mirror (already existed as a placeholder,
+now wired with `kind: interactable`) and `X` toybox (now `kind: minigame`).
+Placed toy/lamp/frame across `bedroom_a`, `bedroom_b`, and `living_room` per
+R16's "concentrated in kids' bedrooms + living room"; the master bedroom
+keeps just the mirror as its priority object, per spec. All four kept
+visual-only (no sound) for the same reason R7's bounce is silent: audio
+approach is still an unresolved open item in phase-1.md.
+
+R17 mini-game shell (`src/minigame/toyboxSort.ts`) renders and reads input
+entirely in screen space — no camera, no world tile coordinates — and is
+driven from `main.ts` by a single `miniGame: ToyboxSortState | null`
+variable that, when non-null, short-circuits pointerdown/move/up *before*
+any world-layer logic (profile switcher, need bubbles, drag-steer) runs, and
+replaces the world render with `renderToyboxSort` for that frame. This keeps
+the mini-game's input model (drag-a-shape-into-a-bin) fully separate from
+both existing movement systems, as R17 requires ("mini-games declare their
+own input model") — it isn't a third movement system, it's not movement at
+all, just a local drag-offset per shape.
+
+Sorting is by colour only (3 bins × 2 shapes each, shape *type* — circle/
+square/triangle — is cosmetic variety, not part of the matching rule) to
+keep v1 "very simple" per the build brief; colour-or-shape from spec.md is
+read as "pick one for v1," not "build both." A drop that lands on the wrong
+bin, or on empty space, just animates the shape back to its home position —
+no shake, no red-X, no sound cue, matching R14's zero-distress rule extended
+to the mini-game. On sorting all 6 shapes, bins pulse gently for ~1.8s and
+then silently reshuffle a fresh set — there is no "you win" screen and no
+stopping point, so the game is infinitely replayable with no fail path to
+reach that state, ever.
+
+Exit is a fixed top-right circular door-arch glyph (~128px touch target,
+code-drawn, no text) that's always present and always live — tapping it
+anywhere in its radius closes the overlay immediately regardless of drag
+state, satisfying "every state has a one-tap exit" without any instructional
+copy ("tap here to exit" was explicitly out per CLAUDE.md).

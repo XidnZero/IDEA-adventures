@@ -40,14 +40,34 @@ X:
   name: toybox
   footprint: [1, 1]
   color: "#f2c14e"
+  kind: minigame
 
 M:
   name: mirror
   footprint: [1, 1]
   color: "#dce9f0"
+  kind: interactable
 
 P:
   name: parent
   footprint: [1, 1]
   color: "#e0a458"
   kind: npc
+
+Y:
+  name: toy
+  footprint: [1, 1]
+  color: "#e07a5f"
+  kind: interactable
+
+L:
+  name: lamp
+  footprint: [1, 1]
+  color: "#f4d35e"
+  kind: interactable
+
+R:
+  name: frame
+  footprint: [1, 1]
+  color: "#8d6a9f"
+  kind: interactable
