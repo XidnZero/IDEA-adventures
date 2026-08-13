@@ -1,0 +1,15 @@
+---
+id: toilet_bath
+stage: home
+size: 6x5
+spawn: [2, 3]
+doors:
+  - at: [3, 0]
+    to: living_room
+    spawn: [9, 7]
+---
+###D##
+#....#
+#S...#
+#....#
+######

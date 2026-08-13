@@ -1,0 +1,47 @@
+# Global object legend (R4). One character = one meaning across ALL room files.
+# footprint is [width, height] in tiles, anchored at the grid character's tile
+# and extending right/down. Never draw furniture shape character-by-character
+# in a room file — one anchor char here is the whole authoring cost.
+
+F:
+  name: fridge
+  footprint: [1, 1]
+  color: "#a9c9d6"
+  need: hunger
+
+T:
+  name: toilet
+  footprint: [1, 1]
+  color: "#e9e6e0"
+  need: washroom
+
+S:
+  name: shower
+  footprint: [2, 1]
+  color: "#bcdbe3"
+  need: hygiene
+
+K:
+  name: table
+  footprint: [2, 1]
+  color: "#c9a37a"
+
+C:
+  name: sofa
+  footprint: [2, 1]
+  color: "#c98787"
+
+B:
+  name: bed
+  footprint: [2, 1]
+  color: "#f0d9b5"
+
+X:
+  name: toybox
+  footprint: [1, 1]
+  color: "#f2c14e"
+
+M:
+  name: mirror
+  footprint: [1, 1]
+  color: "#dce9f0"

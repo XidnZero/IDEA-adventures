@@ -18,3 +18,35 @@ not a nice-to-have.
 **2026-08-13 — Tile size ~25cm, provisional.** Held up at Phase 0 spike scale (single
 mocked-up living room). Not yet validated against real measured room dimensions or
 the new camera-follow zoom level (R1). Re-measure before finalizing room files.
+
+**2026-08-14 — Build tooling is Vite + TypeScript; the engine itself stays plain
+canvas.** Vite/TS is bundling and dev-server tooling only, not a game framework —
+it doesn't touch the "plain canvas held up at spike scale" open question in
+phase-1.md, which is still unresolved and revisited once multi-room + animated
+sheets + mini-games are concurrent.
+
+**2026-08-14 — `.room` files use YAML frontmatter for the header.** Delimited by
+`---` lines, parsed with the same `yaml` package used for objects.yaml/stages.yaml,
+so there's one parsing dependency instead of a bespoke header format. The grid
+below the second `---` is untouched plain ASCII.
+
+**2026-08-14 — Doors connect rooms without requiring geometric contiguity
+on-screen.** R1 mandates hard-cut doorways with no parallax/camera drift, so
+each room is authored and rendered independently; a door only needs a
+consistent (target room, target spawn tile) pair, not real-world-adjacent
+coordinates between the two rooms.
+
+**2026-08-14 — Fixed spawn room is `living_room` (hub of the house graph).**
+Encoded as `SPAWN_ROOM` in `src/engine/config.ts`, not derived from
+stages.yaml's room ordering, so it can't silently change if that list is
+reordered. Satisfies R2 "always spawn in the same room."
+
+**2026-08-14 — First build pass covers world engine core + camera + house
+replica + drag-steering (phase-1.md build-order items 1-5, movement half).**
+BFS auto-walk (`src/movement/bfsPath.ts`) is implemented as a standalone pure
+module but not wired to any trigger yet, since the need-bubble system that
+would trigger it (R11-14) doesn't exist. Single avatar only — profile
+switching (R6, build-order item 8) not yet built. Verified rendering,
+footprint-derived walkability, and door transitions in a live browser run
+(Playwright against `npm run dev`) with zero real art assets present and
+zero console errors.

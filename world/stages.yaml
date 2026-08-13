@@ -1,0 +1,12 @@
+# Stage -> Room map (R3). v1 populates "home" only; the shape supports more
+# stages later (school, playground) without any code change.
+
+home:
+  rooms:
+    - living_room
+    - bedroom_parents
+    - bedroom_a
+    - bedroom_b
+    - kitchen
+    - toilet_kitchen
+    - toilet_bath

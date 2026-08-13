@@ -1,0 +1,15 @@
+---
+id: toilet_kitchen
+stage: home
+size: 6x5
+spawn: [2, 3]
+doors:
+  - at: [0, 2]
+    to: kitchen
+    spawn: [11, 4]
+---
+######
+#..T.#
+D....#
+#....#
+######
