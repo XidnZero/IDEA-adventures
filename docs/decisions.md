@@ -50,3 +50,21 @@ switching (R6, build-order item 8) not yet built. Verified rendering,
 footprint-derived walkability, and door transitions in a live browser run
 (Playwright against `npm run dev`) with zero real art assets present and
 zero console errors.
+
+**2026-08-14 — Layered sprites use a 3-layer body/clothing/hair split, each
+checked for its own asset independently.** `src/avatar/sprite.ts` resolves
+asset paths per (avatarId, layer, pose, facing); each layer falls back to
+its own code-drawn placeholder if missing, so a real `body.png` with no
+matching `hair.png` still renders correctly — the art pipeline's
+placeholder-fallback rule applies per layer, not just per avatar. Only
+`idle`/`walk` poses exist so far; need-state poses wait on R11-14.
+
+**2026-08-14 — Profile portraits (R6) are visual-only, no name text.**
+CLAUDE.md's "no labels/instructional text" is a hard prohibition that
+overrides everything else, including spec.md's R6 note about "real names."
+Read that note as: any future copy elsewhere in the app should refer to the
+child in third person by name, not as a mandate to print a name label under
+a portrait. Portraits distinguish kids by their layered placeholder palette
+(and later, real photo art) alone. Flagging this reading in case it's wrong
+— it's a plausible but not certain resolution of a real tension between two
+source docs.

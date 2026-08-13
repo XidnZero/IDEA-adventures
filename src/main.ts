@@ -1,10 +1,11 @@
 import { loadWorld } from './world/loadWorld';
 import type { Avatar } from './avatar/avatar';
-import { tileCenterPx } from './avatar/avatar';
+import { AVATAR_PROFILES, createAvatar, tileCenterPx } from './avatar/avatar';
 import { createDragState, stepDragSteer } from './movement/dragSteer';
 import { computeCameraOffset } from './engine/camera';
 import { renderRoom } from './render/renderRoom';
 import { renderAvatar } from './render/renderAvatar';
+import { hitTestProfileSwitcher, renderProfileSwitcher } from './ui/profileSwitcher';
 import { SPAWN_ROOM, TILE_PX } from './engine/config';
 
 const app = document.getElementById('app')!;
@@ -17,14 +18,12 @@ const world = loadWorld();
 const spawnRoom = world.rooms[SPAWN_ROOM];
 const spawnCenter = tileCenterPx(spawnRoom.spawn[0], spawnRoom.spawn[1]);
 
-const avatar: Avatar = {
-  id: 'kid1',
-  color: '#5aa9c9',
-  roomId: spawnRoom.id,
-  x: spawnCenter.x,
-  y: spawnCenter.y,
-  facing: 'down',
-};
+// Both avatars share world state from the start (R6) — switching who's
+// active never resets or repositions the other one.
+const avatars: Avatar[] = AVATAR_PROFILES.map((profile, i) =>
+  createAvatar(profile, spawnRoom.id, spawnCenter.x + i * TILE_PX * 0.7, spawnCenter.y),
+);
+let activeIndex = 0;
 
 const drag = createDragState();
 
@@ -37,25 +36,34 @@ function resizeCanvas(): void {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
+function cameraForActive(viewportW: number, viewportH: number): { x: number; y: number } {
+  const active = avatars[activeIndex];
+  const room = world.rooms[active.roomId];
+  return computeCameraOffset(active.x, active.y, room.width * TILE_PX, room.height * TILE_PX, viewportW, viewportH);
+}
+
 function pointerToWorldPx(clientX: number, clientY: number): { x: number; y: number } {
   const rect = canvas.getBoundingClientRect();
-  const room = world.rooms[avatar.roomId];
-  const viewportW = rect.width;
-  const viewportH = rect.height;
-  const camera = computeCameraOffset(
-    avatar.x,
-    avatar.y,
-    room.width * TILE_PX,
-    room.height * TILE_PX,
-    viewportW,
-    viewportH,
-  );
+  const camera = cameraForActive(rect.width, rect.height);
   return { x: clientX - rect.left + camera.x, y: clientY - rect.top + camera.y };
 }
 
-// Hold-and-drag: press anywhere in the world and the avatar continuously
-// walks toward the pointer while held (R8) — not single-tap-to-point.
+// Hold-and-drag: press anywhere in the world and the active avatar
+// continuously walks toward the pointer while held (R8) — not
+// single-tap-to-point. A tap on a profile portrait is handled first and
+// consumes the pointer instead of starting a drag underneath it.
 canvas.addEventListener('pointerdown', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const screenX = e.clientX - rect.left;
+  const screenY = e.clientY - rect.top;
+
+  const picked = hitTestProfileSwitcher(avatars, screenX, screenY);
+  if (picked !== null) {
+    activeIndex = picked;
+    drag.active = false;
+    return;
+  }
+
   canvas.setPointerCapture(e.pointerId);
   const p = pointerToWorldPx(e.clientX, e.clientY);
   drag.active = true;
@@ -80,26 +88,27 @@ function frame(now: number): void {
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
 
-  stepDragSteer(world, avatar, drag, dt);
+  const active = avatars[activeIndex];
+  stepDragSteer(world, active, drag, dt);
 
-  const room = world.rooms[avatar.roomId];
+  const room = world.rooms[active.roomId];
   const rect = canvas.getBoundingClientRect();
-  const camera = computeCameraOffset(
-    avatar.x,
-    avatar.y,
-    room.width * TILE_PX,
-    room.height * TILE_PX,
-    rect.width,
-    rect.height,
-  );
+  const camera = cameraForActive(rect.width, rect.height);
 
   ctx.save();
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, rect.width, rect.height);
   ctx.translate(-camera.x, -camera.y);
   renderRoom(ctx, room);
-  renderAvatar(ctx, avatar);
+  for (let i = 0; i < avatars.length; i++) {
+    const avatar = avatars[i];
+    if (avatar.roomId !== active.roomId) continue;
+    const pose = i === activeIndex && drag.active ? 'walk' : 'idle';
+    renderAvatar(ctx, avatar, pose);
+  }
   ctx.restore();
+
+  renderProfileSwitcher(ctx, avatars, activeIndex);
 
   requestAnimationFrame(frame);
 }
