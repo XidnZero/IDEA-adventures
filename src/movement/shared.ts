@@ -1,7 +1,7 @@
 import type { World } from '../world/types';
 import type { Avatar, Direction } from '../avatar/avatar';
-import { tileCenterPx } from '../avatar/avatar';
 import { TILE_PX } from '../engine/config';
+import { findRoomAtWorldTile } from '../world/worldGrid';
 
 /** Shared by both movement systems (drag-steer and auto-walk) — not a shared step loop, just these two utilities. */
 export function pickFacing(dx: number, dy: number, current: Direction): Direction {
@@ -9,16 +9,13 @@ export function pickFacing(dx: number, dy: number, current: Direction): Directio
   return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
 }
 
-export function crossDoorIfOnDoor(world: World, avatar: Avatar): void {
-  const room = world.rooms[avatar.roomId];
-  const tx = Math.floor(avatar.x / TILE_PX);
-  const ty = Math.floor(avatar.y / TILE_PX);
-  const tile = room.grid[ty]?.[tx];
-  if (tile?.kind !== 'door') return;
-
-  const target = world.rooms[tile.door.to];
-  const center = tileCenterPx(tile.door.spawn[0], tile.door.spawn[1]);
-  avatar.roomId = target.id;
-  avatar.x = center.x;
-  avatar.y = center.y;
+/**
+ * Keeps `avatar.roomId` in sync with world position. Movement itself no
+ * longer needs this (R1's composited house is one continuous walkable grid),
+ * but room-scoped bookkeeping still does — need-bubble/tap-response bounce
+ * keys and NPC lookups are keyed by (roomId, local tx, ty).
+ */
+export function updateAvatarRoomId(world: World, avatar: Avatar): void {
+  const hit = findRoomAtWorldTile(world, Math.floor(avatar.x / TILE_PX), Math.floor(avatar.y / TILE_PX));
+  if (hit) avatar.roomId = hit.room.id;
 }

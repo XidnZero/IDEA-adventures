@@ -11,8 +11,11 @@ Do not block any R-item on art being finished.
 
 1. **World engine core** — plain canvas, ASCII room loader (R4), object anchor system,
    walkability derived from footprints.
-2. **R1 — Following camera.** Top-down orthographic, kid-readable zoom, camera clamped
-   to room bounds, tracks avatar only. No parallax.
+2. **R1 — Following camera.** Top-down orthographic, kid-readable zoom. All rooms in the
+   house are composited into one continuous scene (each room positioned in a shared
+   world-tile grid, not hard-cut per room); the camera holds still inside a dead-zone
+   around the avatar and eases toward them only once they cross that zone's edge. Camera
+   clamped to the whole house's outer bounds, tracks avatar only. No parallax.
 3. **R2 — House replica.** 7 rooms from `world/rooms/*.room`. Kitchen, living room,
    3 bedrooms, 2 toilets. Always spawn in the same room.
 4. **R3 — Stage/Room/Object data model.** Home is the only populated stage; structure
@@ -51,7 +54,6 @@ clothing customisation, kid-facing world editing. Do not scaffold these.
 
 ## Open items NOT yet resolved (do not silently decide these — flag and ask)
 - Final ASCII room dimensions re-checked against new camera-follow zoom (R1 note in spec).
-- R9 breadcrumb rework for camera-follow (target doorway may be off-screen when need fires).
 - Audio approach (recorded voices vs. SFX only).
 - Engine choice beyond "plain canvas held up at spike scale" — revisit once multi-room +
   animated sprite sheets + mini-games are live; canvas may hit a ceiling.

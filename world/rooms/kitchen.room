@@ -2,14 +2,8 @@
 id: kitchen
 stage: home
 size: 13x9
+pos: [0, 9]
 spawn: [6, 6]
-doors:
-  - at: [5, 0]
-    to: living_room
-    spawn: [5, 7]
-  - at: [12, 4]
-    to: toilet_kitchen
-    spawn: [1, 2]
 ---
 #####D#######
 #...........#

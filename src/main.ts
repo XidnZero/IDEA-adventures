@@ -4,7 +4,9 @@ import { AVATAR_PROFILES, createAvatar, tileCenterPx } from './avatar/avatar';
 import { createDragState, stepDragSteer } from './movement/dragSteer';
 import { startAutoWalk, isAutoWalkDone, stepAutoWalk, type AutoWalkState } from './movement/autoWalk';
 import { findPath } from './movement/bfsPath';
-import { computeCameraOffset } from './engine/camera';
+import { updateAvatarRoomId } from './movement/shared';
+import { createCamera, updateCamera, type CameraState } from './engine/camera';
+import { findRoomAtWorldTile, getWorldBoundsPx, roomTileToWorldTile } from './world/worldGrid';
 import { renderRoom } from './render/renderRoom';
 import { renderAvatar } from './render/renderAvatar';
 import { renderNeedBubble, hitTestNeedBubble } from './render/renderNeedBubble';
@@ -35,9 +37,11 @@ app.appendChild(canvas);
 const ctx = canvas.getContext('2d')!;
 
 const world = loadWorld();
+const worldBounds = getWorldBoundsPx(world);
 
 const spawnRoom = world.rooms[SPAWN_ROOM];
-const spawnCenter = tileCenterPx(spawnRoom.spawn[0], spawnRoom.spawn[1]);
+const spawnWorldTile = roomTileToWorldTile(spawnRoom, spawnRoom.spawn[0], spawnRoom.spawn[1]);
+const spawnCenter = tileCenterPx(spawnWorldTile.tx, spawnWorldTile.ty);
 
 // Both avatars share world state from the start (R6) — switching who's
 // active never resets or repositions the other one.
@@ -93,15 +97,18 @@ function resizeCanvas(): void {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-function cameraForActive(viewportW: number, viewportH: number): { x: number; y: number } {
-  const active = avatars[activeIndex];
-  const room = world.rooms[active.roomId];
-  return computeCameraOffset(active.x, active.y, room.width * TILE_PX, room.height * TILE_PX, viewportW, viewportH);
-}
+// R1: a single persistent dead-zone camera, eased toward the active avatar
+// whenever they cross the dead-zone threshold — see engine/camera.ts. Starts
+// centered on spawn; frame() below keeps it updated every frame after that.
+const camera: CameraState = createCamera(
+  spawnCenter.x,
+  spawnCenter.y,
+  window.innerWidth,
+  window.innerHeight,
+);
 
 function pointerToWorldPx(clientX: number, clientY: number): { x: number; y: number } {
   const rect = canvas.getBoundingClientRect();
-  const camera = cameraForActive(rect.width, rect.height);
   return { x: clientX - rect.left + camera.x, y: clientY - rect.top + camera.y };
 }
 
@@ -163,11 +170,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (hitTestNeedBubble(active, activeNeed, p.x, p.y, now) && activeNeed) {
     const target = findNeedTarget(world, activeNeed);
     if (target) {
-      const from = {
-        roomId: active.roomId,
-        tx: Math.floor(active.x / TILE_PX),
-        ty: Math.floor(active.y / TILE_PX),
-      };
+      const from = { tx: Math.floor(active.x / TILE_PX), ty: Math.floor(active.y / TILE_PX) };
       const path = findPath(world, from, target);
       if (path) {
         autoWalkStates[activeIndex] = startAutoWalk(path);
@@ -180,17 +183,15 @@ canvas.addEventListener('pointerdown', (e) => {
   // Object tap: parent NPCs (R7) and interactables (R16) share the same
   // retriggerable bounce response instead of starting a drag-walk; the
   // toybox (R17) instead launches the mini-game overlay diegetically.
-  const room = world.rooms[active.roomId];
-  const tx = Math.floor(p.x / TILE_PX);
-  const ty = Math.floor(p.y / TILE_PX);
-  const tile = room.grid[ty]?.[tx];
-  if (tile?.kind === 'object' && tile.isAnchor) {
+  const hit = findRoomAtWorldTile(world, Math.floor(p.x / TILE_PX), Math.floor(p.y / TILE_PX));
+  const tile = hit?.room.grid[hit.ty]?.[hit.tx];
+  if (hit && tile?.kind === 'object' && tile.isAnchor) {
     if (tile.def.kind === 'minigame') {
       miniGame = createToyboxSort();
       return;
     }
     if (tile.def.kind === 'npc' || tile.def.kind === 'interactable') {
-      triggerTapResponse(tapResponse, room.id, tx, ty, now);
+      triggerTapResponse(tapResponse, hit.room.id, hit.tx, hit.ty, now);
       return;
     }
   }
@@ -266,8 +267,13 @@ function frame(now: number): void {
     if (i === activeIndex && drag.active) {
       stepDragSteer(world, avatar, drag, dt);
     } else if (autoWalkStates[i]) {
-      stepAutoWalk(world, avatar, autoWalkStates[i]!, dt);
+      stepAutoWalk(avatar, autoWalkStates[i]!, dt);
     }
+
+    // R1: rooms are just regions of one continuous walkable grid now, so
+    // there's no door-crossing event to hook — just keep this bookkeeping
+    // field in sync with wherever the avatar's world position lands.
+    updateAvatarRoomId(world, avatar);
 
     const isMoving = Math.hypot(avatar.x - prevX, avatar.y - prevY) > 0.01;
     advanceNeedState(needStates[i], sessionMs, dt, isMoving);
@@ -283,6 +289,8 @@ function frame(now: number): void {
   }
 
   const rect = canvas.getBoundingClientRect();
+  const active = avatars[activeIndex];
+  updateCamera(camera, active.x, active.y, rect.width, rect.height, worldBounds, dt);
 
   if (gateOpen) {
     // R20: placeholder panel, see docs/decisions.md — nothing else renders
@@ -294,23 +302,40 @@ function frame(now: number): void {
     updateToyboxSort(miniGame, now);
     renderToyboxSort(ctx, miniGame, rect.width, rect.height, now);
   } else {
-    const active = avatars[activeIndex];
-    const room = world.rooms[active.roomId];
-    const camera = cameraForActive(rect.width, rect.height);
-
     ctx.save();
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.translate(-camera.x, -camera.y);
-    renderRoom(
-      ctx,
-      room,
-      (tx, ty) => getTapResponseOffsetPx(tapResponse, room.id, tx, ty, now),
-      lighting.isNight,
-    );
+
+    // R1: every room in the house renders every frame, each translated to
+    // its own position in the composited world grid — no per-room hard cut.
+    // Cheap AABB cull against the viewport since there are only a handful of
+    // rooms, but skips drawing anything currently off-screen.
+    for (const room of Object.values(world.rooms)) {
+      const originX = room.pos[0] * TILE_PX;
+      const originY = room.pos[1] * TILE_PX;
+      const roomPxW = room.width * TILE_PX;
+      const roomPxH = room.height * TILE_PX;
+      const onScreen =
+        originX + roomPxW >= camera.x &&
+        originX <= camera.x + rect.width &&
+        originY + roomPxH >= camera.y &&
+        originY <= camera.y + rect.height;
+      if (!onScreen) continue;
+
+      ctx.save();
+      ctx.translate(originX, originY);
+      renderRoom(
+        ctx,
+        room,
+        (tx, ty) => getTapResponseOffsetPx(tapResponse, room.id, tx, ty, now),
+        lighting.isNight,
+      );
+      ctx.restore();
+    }
+
     for (let i = 0; i < avatars.length; i++) {
       const avatar = avatars[i];
-      if (avatar.roomId !== active.roomId) continue;
       const pose = i === activeIndex && drag.active ? 'walk' : 'idle';
       renderAvatar(ctx, avatar, pose);
     }

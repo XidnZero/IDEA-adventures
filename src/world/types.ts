@@ -16,17 +16,15 @@ export interface ObjectDef {
   kind?: 'npc' | 'interactable' | 'minigame';
 }
 
-export interface DoorDef {
-  at: [number, number];
-  to: string; // room id
-  spawn: [number, number]; // spawn tile in destination room
-}
-
+// Doors carry no payload beyond their grid position: rooms are composited
+// into one continuous world (R1), so walking through a doorway is just
+// walking — there's nothing to teleport to. The tile only exists to render
+// a floor-mat visual distinct from plain floor.
 export type Tile =
   | { kind: 'wall' }
   | { kind: 'floor' }
   | { kind: 'void' }
-  | { kind: 'door'; door: DoorDef }
+  | { kind: 'door' }
   | { kind: 'object'; char: string; def: ObjectDef; isAnchor: boolean };
 
 export interface RoomDef {
@@ -34,10 +32,13 @@ export interface RoomDef {
   stage: string;
   width: number;
   height: number;
+  // (x,y) tile offset of this room's origin in the house-wide composited
+  // world grid (R1's threshold-pan camera needs every room positioned in one
+  // shared coordinate space, not authored independently — see decisions.md).
+  pos: [number, number];
   spawn: [number, number];
-  doors: DoorDef[];
-  grid: Tile[][]; // grid[y][x]
-  walkable: boolean[][]; // walkable[y][x]
+  grid: Tile[][]; // grid[y][x], room-local coordinates
+  walkable: boolean[][]; // walkable[y][x], room-local coordinates
 }
 
 export interface StageDef {

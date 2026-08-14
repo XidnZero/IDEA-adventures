@@ -7,6 +7,37 @@ const FLOOR_COLOR = '#f4ead9';
 const DOOR_MAT_COLOR = '#d8c9a3';
 const VOID_COLOR = '#000000';
 
+// Walls render as a thin strip (20% of a tile) rather than a filled tile —
+// a full-tile wall reads as an oddly thick block now that adjacent rooms'
+// walls sit right next to each other in the composited house (R1).
+// Collision is unaffected: walkability is still derived from the full tile.
+const WALL_THICKNESS_FRAC = 0.2;
+
+function isWallAt(room: RoomDef, x: number, y: number): boolean {
+  return room.grid[y]?.[x]?.kind === 'wall';
+}
+
+function drawWallTile(ctx: CanvasRenderingContext2D, room: RoomDef, x: number, y: number): void {
+  const px = x * TILE_PX;
+  const py = y * TILE_PX;
+  const t = TILE_PX * WALL_THICKNESS_FRAC;
+  const horizontalNeighbor = isWallAt(room, x - 1, y) || isWallAt(room, x + 1, y);
+  const verticalNeighbor = isWallAt(room, x, y - 1) || isWallAt(room, x, y + 1);
+
+  ctx.fillStyle = WALL_COLOR;
+  if (horizontalNeighbor && !verticalNeighbor) {
+    // Part of a horizontal run: a thin strip spanning the tile's full width.
+    ctx.fillRect(px, py + (TILE_PX - t) / 2, TILE_PX, t);
+  } else if (verticalNeighbor && !horizontalNeighbor) {
+    // Part of a vertical run: a thin strip spanning the tile's full height.
+    ctx.fillRect(px + (TILE_PX - t) / 2, py, t, TILE_PX);
+  } else {
+    // Corner (both) or isolated (neither): a small centered square so
+    // corners still join up instead of leaving a gap.
+    ctx.fillRect(px + (TILE_PX - t) / 2, py + (TILE_PX - t) / 2, t, t);
+  }
+}
+
 export function renderRoom(
   ctx: CanvasRenderingContext2D,
   room: RoomDef,
@@ -21,8 +52,7 @@ export function renderRoom(
       const px = x * TILE_PX;
       const py = y * TILE_PX;
       if (tile.kind === 'wall') {
-        ctx.fillStyle = WALL_COLOR;
-        ctx.fillRect(px, py, TILE_PX, TILE_PX);
+        drawWallTile(ctx, room, x, y);
       } else if (tile.kind === 'void') {
         ctx.fillStyle = VOID_COLOR;
         ctx.fillRect(px, py, TILE_PX, TILE_PX);

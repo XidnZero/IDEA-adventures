@@ -6,9 +6,9 @@ export type Direction = 'down' | 'up' | 'left' | 'right';
 export interface Avatar {
   id: string;
   palette: AvatarPalette;
-  roomId: string;
-  x: number; // px within current room
-  y: number; // px within current room
+  roomId: string; // which room's grid the avatar is currently standing in (bookkeeping only, see movement/shared.ts)
+  x: number; // world px, in the composited house-wide coordinate space (R1)
+  y: number; // world px, in the composited house-wide coordinate space (R1)
   facing: Direction;
 }
 

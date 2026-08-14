@@ -2,11 +2,8 @@
 id: bedroom_b
 stage: home
 size: 9x7
+pos: [13, 1]
 spawn: [4, 4]
-doors:
-  - at: [0, 3]
-    to: living_room
-    spawn: [11, 4]
 ---
 #########
 #......R#

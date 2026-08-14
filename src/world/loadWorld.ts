@@ -26,20 +26,19 @@ export function loadWorld(): World {
     rooms[room.id] = room;
   }
 
-  // Cross-room door consistency: every door's target room and target spawn
-  // tile must actually exist, or a mistyped `to:`/`spawn:` fails silently at
-  // the worst possible time (mid-walk, for a 2-3yo audience).
-  for (const room of Object.values(rooms)) {
-    for (const door of room.doors) {
-      const target = rooms[door.to];
-      if (!target) {
-        throw new Error(`${room.id}: door targets unknown room "${door.to}"`);
-      }
-      const [sx, sy] = door.spawn;
-      if (!target.walkable[sy]?.[sx]) {
-        throw new Error(
-          `${room.id}: door into "${door.to}" spawns at (${sx},${sy}), which is not walkable there`,
-        );
+  // Composited house layout (R1): every room's world-tile footprint must be
+  // disjoint, since all rooms render together in one continuous coordinate
+  // space with no per-room clipping — an overlap would mean two rooms drawn
+  // on top of each other.
+  const roomList = Object.values(rooms);
+  for (let i = 0; i < roomList.length; i++) {
+    for (let j = i + 1; j < roomList.length; j++) {
+      const a = roomList[i];
+      const b = roomList[j];
+      const overlapX = a.pos[0] < b.pos[0] + b.width && b.pos[0] < a.pos[0] + a.width;
+      const overlapY = a.pos[1] < b.pos[1] + b.height && b.pos[1] < a.pos[1] + a.height;
+      if (overlapX && overlapY) {
+        throw new Error(`rooms "${a.id}" and "${b.id}" overlap in world space`);
       }
     }
   }

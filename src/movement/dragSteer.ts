@@ -1,7 +1,8 @@
-import type { RoomDef, World } from '../world/types';
+import type { World } from '../world/types';
 import type { Avatar } from '../avatar/avatar';
 import { AVATAR_RADIUS_TILES, AVATAR_SPEED_TILES_PER_SEC, TILE_PX } from '../engine/config';
-import { crossDoorIfOnDoor, pickFacing } from './shared';
+import { pickFacing } from './shared';
+import { isWalkableWorldTile } from '../world/worldGrid';
 
 /**
  * Hold-and-drag world movement (R8). Continuous pointer-following, not
@@ -20,28 +21,24 @@ export function createDragState(): DragState {
   return { active: false, targetPxX: 0, targetPxY: 0 };
 }
 
-function isWalkablePx(room: RoomDef, px: number, py: number): boolean {
-  const tx = Math.floor(px / TILE_PX);
-  const ty = Math.floor(py / TILE_PX);
-  if (ty < 0 || ty >= room.height || tx < 0 || tx >= room.width) return false;
-  return room.walkable[ty][tx];
+function isWalkablePx(world: World, px: number, py: number): boolean {
+  return isWalkableWorldTile(world, Math.floor(px / TILE_PX), Math.floor(py / TILE_PX));
 }
 
 // Avatar is treated as a small circle: check the 4 cardinal edge points so it
 // can't clip through a wall corner-first while sliding along it.
-function avatarFits(room: RoomDef, cx: number, cy: number): boolean {
+function avatarFits(world: World, cx: number, cy: number): boolean {
   const r = AVATAR_RADIUS_TILES * TILE_PX;
   return (
-    isWalkablePx(room, cx - r, cy) &&
-    isWalkablePx(room, cx + r, cy) &&
-    isWalkablePx(room, cx, cy - r) &&
-    isWalkablePx(room, cx, cy + r)
+    isWalkablePx(world, cx - r, cy) &&
+    isWalkablePx(world, cx + r, cy) &&
+    isWalkablePx(world, cx, cy - r) &&
+    isWalkablePx(world, cx, cy + r)
   );
 }
 
 export function stepDragSteer(world: World, avatar: Avatar, drag: DragState, dtSeconds: number): void {
   if (!drag.active) return;
-  const room = world.rooms[avatar.roomId];
 
   const dx = drag.targetPxX - avatar.x;
   const dy = drag.targetPxY - avatar.y;
@@ -55,14 +52,12 @@ export function stepDragSteer(world: World, avatar: Avatar, drag: DragState, dtS
 
   // Axis-separated sliding: try x, then y, independently, so brushing a wall
   // at an angle slides along it instead of stopping dead.
-  if (moveX !== 0 && avatarFits(room, avatar.x + moveX, avatar.y)) {
+  if (moveX !== 0 && avatarFits(world, avatar.x + moveX, avatar.y)) {
     avatar.x += moveX;
   }
-  if (moveY !== 0 && avatarFits(room, avatar.x, avatar.y + moveY)) {
+  if (moveY !== 0 && avatarFits(world, avatar.x, avatar.y + moveY)) {
     avatar.y += moveY;
   }
 
   avatar.facing = pickFacing(dx, dy, avatar.facing);
-
-  crossDoorIfOnDoor(world, avatar);
 }

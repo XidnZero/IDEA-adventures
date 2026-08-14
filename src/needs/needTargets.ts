@@ -1,4 +1,5 @@
 import type { Need, ObjectDef, RoomDef, World } from '../world/types';
+import { roomTileToWorldTile } from '../world/worldGrid';
 
 /** First walkable tile bordering an object's footprint — where an avatar stands to use it. */
 export function findInteractionTile(
@@ -24,8 +25,9 @@ export function findInteractionTile(
   return null;
 }
 
+// World-tile coordinates (R1's composited house), consumed directly by
+// bfsPath.ts's world-grid pathing.
 export interface NeedTarget {
-  roomId: string;
   tx: number;
   ty: number;
 }
@@ -49,5 +51,5 @@ export function findNeedTarget(world: World, need: Need): NeedTarget | null {
   const room = world.rooms[preferred.roomId];
   const tile = findInteractionTile(room, preferred.ax, preferred.ay, preferred.def.footprint);
   if (!tile) return null;
-  return { roomId: preferred.roomId, tx: tile.tx, ty: tile.ty };
+  return roomTileToWorldTile(room, tile.tx, tile.ty);
 }

@@ -310,3 +310,73 @@ Both this session's temporary Playwright-visible debug hook
 check for the R20 proof) were removed before the final `tsc -b` +
 `vite build` pass, per this project's established convention (see the
 R11-14 entry above) — grepped for `__debug`/`TEMP` afterward to confirm.
+
+**2026-08-14 — R1 reworked: composited whole-house world + threshold/dead-zone
+pan camera, replacing per-room hard-cut rendering.** The camera was built
+correctly against the *original* reading of R1 ("hard-cut doorways, no
+parallax") but that reading is reversed as of this entry, at explicit user
+request: every room in the house now renders simultaneously, each positioned
+in one shared world-tile grid, and the camera pans smoothly instead of
+snapping when a room changes. spec.md's R1 line and phase-1.md's build-order
+item 2 are updated to match; treat this entry as the record of *why* they no
+longer say "hard-cut."
+
+Each `.room` file gained a required `pos: [x, y]` header field (tile offset
+in the house-wide grid), authored manually rather than inferred from door
+adjacency — inference was rejected because door pairs only encode
+`(target room, target spawn tile)`, not which wall/side a door sits on, so
+there isn't enough information to place rooms automatically. `DoorDef` (the
+`to`/`spawn` payload) is gone entirely: with one continuous walkable grid,
+walking through a doorway is just walking, so a door tile (`D`) now only
+means "render a floor-mat visual here instead of plain floor" — see
+`world/worldGrid.ts`'s `findRoomAtWorldTile`/`isWalkableWorldTile`, which
+resolve any world-tile coordinate to whichever room (if any) contains it.
+`loadWorld.ts`'s old door-consistency check (did `to`/`spawn` point at a real,
+walkable tile) is replaced by a room-overlap check (no two rooms' world-tile
+footprints may intersect, since they're drawn on top of each other otherwise).
+
+Positioning the house forced an actual floor-plan redesign, not just a
+coordinate assignment pass: `living_room`'s south wall originally hosted
+doors to both `kitchen` (13 tiles wide, the same width as living_room itself)
+and `toilet_bath` 4 tiles apart, which is geometrically impossible once both
+neighbors need to sit flush against that wall without overlapping — kitchen
+alone already spans the entire width. Rather than shrink/redraw kitchen's
+interior (a bigger content change, touching fridge/stove/parent placement),
+`toilet_bath` was relocated to a corner of living_room's north wall not
+already covered by `bedroom_parents` (which is 9 tiles wide against
+living_room's 13-tile wall, leaving a 2-tile gap at the east end). Only
+`living_room.room` and `toilet_bath.room` needed grid edits (moving one door
+character each); the other five rooms only needed the new `pos:` header
+field added — their existing door placements already lined up edge-to-edge
+with their neighbors once given the right offset. Verified no two rooms'
+world-tile bounds overlap (`tsc -b` passes `loadWorld.ts`'s new check) and
+that every door pair's tiles land on directly-adjacent world coordinates
+(hand-computed and cross-checked before editing, since a gap of even one
+tile would make that doorway uncrossable — there's no teleport fallback
+anymore).
+
+Avatar position (`avatar.x`/`avatar.y`) changed meaning from room-local px to
+world-px in this same pass — a prerequisite for continuous movement across a
+room boundary. `avatar.roomId` is kept only as bookkeeping (which room's
+local grid the avatar's world position currently falls in), refreshed every
+frame via `movement/shared.ts`'s new `updateAvatarRoomId`; nothing in
+movement/collision reads it anymore. `movement/bfsPath.ts` and
+`movement/autoWalk.ts` were both simplified by this: BFS now runs directly
+over the world grid via `isWalkableWorldTile` with plain 4-directional
+neighbors (no more per-room graph + door-edge special case), and
+`stepAutoWalk` no longer needs the mid-step "jump to the paired spawn tile"
+logic from the R11-14 entry above — that whole class of bug (path desyncing
+from the avatar's actual room) can't occur when there's no discrete room
+jump to desync from.
+
+The camera itself (`engine/camera.ts`) became stateful — `computeCameraOffset`
+was a pure function of avatar position each frame; `updateCamera` now holds
+persistent `{x, y}` and only nudges it once the avatar's *screen* position
+(computed from that persisted camera state) crosses a dead-zone rectangle
+around screen-center, easing toward a "just inside the dead-zone again"
+target with a framerate-independent exponential smoothing term. This still
+satisfies CLAUDE.md's "camera only moves when the avatar moves": a
+stationary avatar produces a stationary desired position, so the ease target
+never changes and the camera never drifts. Clamped to the composited house's
+outer bounds (`worldGrid.ts`'s `getWorldBoundsPx`) the same way the old
+per-room clamp worked, just against the whole house instead of one room.

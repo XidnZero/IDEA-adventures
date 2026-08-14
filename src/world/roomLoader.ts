@@ -1,8 +1,8 @@
 import { parse as parseYaml } from 'yaml';
-import type { DoorDef, ObjectDef, RoomDef, Tile } from './types';
+import type { ObjectDef, RoomDef, Tile } from './types';
 
 /**
- * Parses one `.room` file: a YAML frontmatter header (id/stage/size/spawn/doors)
+ * Parses one `.room` file: a YAML frontmatter header (id/stage/size/pos/spawn)
  * followed by the ASCII grid. Per R4, the grid only ever carries walls/floor/doors
  * and single-character object anchors — footprints are expanded here from
  * objects.yaml, never hand-drawn in the grid itself.
@@ -21,8 +21,8 @@ export function parseRoomFile(
     id: string;
     stage: string;
     size: string;
+    pos: [number, number];
     spawn: [number, number];
-    doors?: DoorDef[];
   };
   const gridText = parts.slice(2).join('---').replace(/^\n+|\n+$/g, '');
   const gridLines = gridText.split('\n').map((l) => l.replace(/\r$/, ''));
@@ -37,10 +37,9 @@ export function parseRoomFile(
       `${header.id}: grid has ${gridLines.length} rows, header size says ${height}`,
     );
   }
-
-  const doors = header.doors ?? [];
-  const doorAt = new Map<string, DoorDef>();
-  for (const d of doors) doorAt.set(`${d.at[0]},${d.at[1]}`, d);
+  if (!header.pos) {
+    throw new Error(`${header.id}: missing "pos" (world tile offset)`);
+  }
 
   const grid: Tile[][] = [];
   const walkable: boolean[][] = [];
@@ -66,11 +65,7 @@ export function parseRoomFile(
         tileRow.push({ kind: 'floor' });
         walkRow.push(true);
       } else if (ch === 'D') {
-        const door = doorAt.get(`${x},${y}`);
-        if (!door) {
-          throw new Error(`${header.id}: door char at (${x},${y}) has no matching doors[] entry`);
-        }
-        tileRow.push({ kind: 'door', door });
+        tileRow.push({ kind: 'door' });
         walkRow.push(true);
       } else {
         const def = objects[ch];
@@ -83,15 +78,6 @@ export function parseRoomFile(
     }
     grid.push(tileRow);
     walkable.push(walkRow);
-  }
-
-  // Every declared door must land on an actual 'D' tile — catches typos in the header.
-  for (const d of doors) {
-    const [dx, dy] = d.at;
-    const tile = grid[dy]?.[dx];
-    if (!tile || tile.kind !== 'door') {
-      throw new Error(`${header.id}: doors[] entry at (${dx},${dy}) has no 'D' char there`);
-    }
   }
 
   // Expand object footprints from their anchor tile. Any tile a footprint covers
@@ -135,8 +121,8 @@ export function parseRoomFile(
     stage: header.stage,
     width,
     height,
+    pos: header.pos,
     spawn: header.spawn,
-    doors,
     grid,
     walkable,
   };

@@ -2,11 +2,8 @@
 id: bedroom_parents
 stage: home
 size: 9x7
+pos: [2, -7]
 spawn: [4, 3]
-doors:
-  - at: [4, 6]
-    to: living_room
-    spawn: [6, 1]
 ---
 #########
 #.......#

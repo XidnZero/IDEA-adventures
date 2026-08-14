@@ -32,7 +32,12 @@ Needs are **caused**, not just timed: eating → later washroom; running around 
 Unmet needs → patience only (fidget, hold tummy, look at door). Never distress, never accident.
 
 ## Requirements map (R1–R22) — full detail in docs/phase-1.md
-- R1 Following camera, kid-readable zoom, hard-cut doorways, no parallax.
+- R1 Following camera: whole house composited into one continuous scene (all rooms
+  loaded at once, positioned in a shared world grid), kid-readable zoom, threshold/
+  dead-zone pan (camera holds still until the avatar crosses a screen-space threshold,
+  then eases toward keeping them just inside it again) instead of a hard per-room cut.
+  Still no parallax/independent camera drift — it only ever reacts to avatar movement.
+  (Revised 2026-08-14 from the original "hard-cut doorways" reading — see decisions.md.)
 - R2 Full house replica: kitchen, living room, 3 bedrooms, 2 toilets. Fixed spawn room.
 - R3 Stage→Room→Object data model from commit 1; v1 populates Home only.
 - R4 ASCII room format (ADR below).
