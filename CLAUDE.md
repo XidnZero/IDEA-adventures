@@ -46,10 +46,11 @@ reasonable in a diff. They are not reasonable here.
 - Mini-games declare their own input model per-game (R17); the no-drag rule is world-layer only.
 
 ## Art pipeline (current state)
-Partial real assets exist. Everything must render with **code-drawn placeholder fallback**
-if a real asset is missing — this was already proven in the Phase 0 spike and must carry
-into v1. Pattern: check for `assets/<name>.png` next to the room/object; if absent, fall back
-to a flat-shape canvas draw. Never hard-fail or blank-render on a missing asset.
+Partial real assets exist (SVG, under `public/assets/`). Everything must render with
+**code-drawn placeholder fallback** if a real asset is missing — this was already proven
+in the Phase 0 spike and must carry into v1. Pattern: check for `assets/<name>.svg`, then
+`assets/<name>.png`, next to the room/object; if neither exists, fall back to a flat-shape
+canvas draw. Never hard-fail or blank-render on a missing asset.
 
 ## Source of truth
 This file = prohibitions and standing architecture rules only, ~1 page, always in context.

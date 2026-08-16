@@ -16,8 +16,10 @@ Do not block any R-item on art being finished.
    world-tile grid, not hard-cut per room); the camera holds still inside a dead-zone
    around the avatar and eases toward them only once they cross that zone's edge. Camera
    clamped to the whole house's outer bounds, tracks avatar only. No parallax.
-3. **R2 — House replica.** 7 rooms from `world/rooms/*.room`. Kitchen, living room,
-   3 bedrooms, 2 toilets. Always spawn in the same room.
+3. **R2 — House replica.** 9 rooms from `world/rooms/*.room`, matching the family's
+   real dimensioned floor plan (250mm/tile): `living`, `bedroom_2`, `bedroom_3`,
+   `main_hall` (small connector), `main_bedroom`, `bath_wc_1`, `bath_wc_2`, `kitchen`,
+   `store_pantry`. Always spawn in the same room (`living`, the graph's hub).
 4. **R3 — Stage/Room/Object data model.** Home is the only populated stage; structure
    supports more.
 5. **R8/R9 — Movement.** Hold-and-drag steering (world layer) + separate waypoint/BFS
@@ -53,7 +55,6 @@ School/playground stages, GUI world builder, more mini-games, tiredness need, av
 clothing customisation, kid-facing world editing. Do not scaffold these.
 
 ## Open items NOT yet resolved (do not silently decide these — flag and ask)
-- Final ASCII room dimensions re-checked against new camera-follow zoom (R1 note in spec).
 - Audio approach (recorded voices vs. SFX only).
 - Engine choice beyond "plain canvas held up at spike scale" — revisit once multi-room +
   animated sprite sheets + mini-games are live; canvas may hit a ceiling.
