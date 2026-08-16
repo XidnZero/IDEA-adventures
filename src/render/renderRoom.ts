@@ -17,23 +17,44 @@ function isWallAt(room: RoomDef, x: number, y: number): boolean {
   return room.grid[y]?.[x]?.kind === 'wall';
 }
 
+// Floor-ish = the side a wall strip should flush against. Anything walkable
+// or object-covered counts, same as plain floor; out-of-bounds and void don't.
+function isFloorishAt(room: RoomDef, x: number, y: number): boolean {
+  const kind = room.grid[y]?.[x]?.kind;
+  return kind === 'floor' || kind === 'door' || kind === 'object';
+}
+
 function drawWallTile(ctx: CanvasRenderingContext2D, room: RoomDef, x: number, y: number): void {
   const px = x * TILE_PX;
   const py = y * TILE_PX;
   const t = TILE_PX * WALL_THICKNESS_FRAC;
-  const horizontalNeighbor = isWallAt(room, x - 1, y) || isWallAt(room, x + 1, y);
-  const verticalNeighbor = isWallAt(room, x, y - 1) || isWallAt(room, x, y + 1);
+
+  // Run direction comes from actual neighbor tiles, not room-boundary
+  // position — some rooms (e.g. the kitchen's stepped diagonal corner cut)
+  // have wall runs that aren't on the room's outer perimeter.
+  const horizontalRun = isWallAt(room, x - 1, y) || isWallAt(room, x + 1, y);
+  const verticalRun = isWallAt(room, x, y - 1) || isWallAt(room, x, y + 1);
+
+  // Flush the strip against whichever side actually has floor, rather than
+  // assuming "floor is always toward increasing x/y" — that assumption only
+  // holds on the outer perimeter.
+  const offsetX = isFloorishAt(room, x + 1, y) ? TILE_PX - t : 0;
+  const offsetY = isFloorishAt(room, x, y + 1) ? TILE_PX - t : 0;
 
   ctx.fillStyle = WALL_COLOR;
-  if (horizontalNeighbor && !verticalNeighbor) {
-    // Part of a horizontal run: a thin strip spanning the tile's full width.
-    ctx.fillRect(px, py + (TILE_PX - t) / 2, TILE_PX, t);
-  } else if (verticalNeighbor && !horizontalNeighbor) {
-    // Part of a vertical run: a thin strip spanning the tile's full height.
-    ctx.fillRect(px + (TILE_PX - t) / 2, py, t, TILE_PX);
+  if (horizontalRun && !verticalRun) {
+    // Straight horizontal run (top/bottom wall): thin in y, full width.
+    ctx.fillRect(px, py + offsetY, TILE_PX, t);
+  } else if (verticalRun && !horizontalRun) {
+    // Straight vertical run (left/right wall): thin in x, full height.
+    ctx.fillRect(px + offsetX, py, t, TILE_PX);
+  } else if (horizontalRun && verticalRun) {
+    // Corner: small square flush into the interior corner so the two
+    // strips meeting here connect with no gap.
+    ctx.fillRect(px + offsetX, py + offsetY, t, t);
   } else {
-    // Corner (both) or isolated (neither): a small centered square so
-    // corners still join up instead of leaving a gap.
+    // Isolated wall tile with no wall neighbor on any side: centered
+    // fallback, since there's no run to flush against.
     ctx.fillRect(px + (TILE_PX - t) / 2, py + (TILE_PX - t) / 2, t, t);
   }
 }

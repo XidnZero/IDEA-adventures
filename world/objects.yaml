@@ -71,3 +71,13 @@ R:
   footprint: [1, 1]
   color: "#8d6a9f"
   kind: interactable
+
+W:
+  name: wardrobe
+  footprint: [1, 1]
+  color: "#8a6d4b"
+
+N:
+  name: sink
+  footprint: [1, 1]
+  color: "#cfe3ea"

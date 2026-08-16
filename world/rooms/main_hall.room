@@ -1,0 +1,11 @@
+---
+id: main_hall
+stage: home
+size: 6x4
+pos: [24, 16]
+spawn: [3, 1]
+---
+##D###
+#....#
+.....#
+##D###

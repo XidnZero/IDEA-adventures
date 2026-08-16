@@ -3,10 +3,12 @@
 
 home:
   rooms:
-    - living_room
-    - bedroom_parents
-    - bedroom_a
-    - bedroom_b
+    - bedroom_3
+    - bedroom_2
+    - living
+    - main_hall
+    - main_bedroom
+    - bath_wc_1
+    - bath_wc_2
+    - store_pantry
     - kitchen
-    - toilet_kitchen
-    - toilet_bath

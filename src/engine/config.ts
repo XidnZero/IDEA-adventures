@@ -8,7 +8,7 @@ export const AVATAR_SPEED_TILES_PER_SEC = 2.6;
 export const AVATAR_RADIUS_TILES = 0.32;
 
 export const SPAWN_STAGE = 'home';
-export const SPAWN_ROOM = 'living_room'; // R2: always spawn in the same room.
+export const SPAWN_ROOM = 'living'; // R2: always spawn in the same room.
 
 // Care loop pacing (R11). Session-scoped: driven by foreground play time
 // accumulated in the render loop, never Date.now() — see docs/decisions.md

@@ -380,3 +380,275 @@ stationary avatar produces a stationary desired position, so the ease target
 never changes and the camera never drifts. Clamped to the composited house's
 outer bounds (`worldGrid.ts`'s `getWorldBoundsPx`) the same way the old
 per-room clamp worked, just against the whole house instead of one room.
+
+**2026-08-15 — Wall thickness reduced to 20%, flush to interior; door-mat
+tiles reduced to one per connection.** Two follow-up visual fixes on the R1
+composite. First, `renderRoom.ts`'s wall tiles now draw as a thin strip (20%
+of a tile) flush against the interior floor tile they border, instead of a
+full-tile fill centered in the cell — the full-tile version read as an odd
+double-thick block now that two adjacent rooms' walls sit right next to each
+other. Collision is untouched; only the fill rect shrank. Second, each door
+connection previously rendered as two adjacent door-mat squares (one 'D' tile
+authored per room, both at the shared seam), which read as a 2-tile-wide
+opening. Each connection now keeps exactly one side's 'D' char and the other
+side's matching tile is changed to plain '.' (still floor, still walkable —
+crossing still needs both tiles passable — just not mat-styled), so the
+opening reads as one square. The room closer to `living_room` in the house
+graph keeps the 'D' (living_room keeps all 5 of its doors; `kitchen` keeps
+its door to `toilet_kitchen`); the other five rooms' matching door tiles
+became '.'.
+
+**2026-08-15 — Real-world floor plan reconciled after user hand-edited the
+`.room` ASCII to match their actual house.** The edit used a pre-R1 door
+scheme (lettered door chars + a `doors:` header dict, e.g. `k: kitchen`)
+that the current engine no longer parses at all — doors are single literal
+`D` grid tiles with no header, positioned via each room's `pos:` (see the R1
+entry above). Wrote a standalone validator (Playwright/Node scratchpad, not
+in the repo) that runs the same checks `roomLoader.ts`/`loadWorld.ts` do but
+collects every problem instead of throwing on the first one; it found 44
+issues, all stemming from the format mismatch plus stale `pos:` values (room
+sizes grew substantially but positions weren't recomputed, so every room
+overlapped its neighbors) plus two new object chars (`W`, `N`) with no
+`objects.yaml` entry.
+
+User confirmed by chat: `bedroom_2` = `bedroom_a`, `bedroom_3` = `bedroom_b`,
+`main_hall` = `bedroom_parents`, `toilet_bath` is en-suite off
+`bedroom_parents` (not off `living_room`/hall as originally authored), and
+`store_pantry`/`access_balcony`/`aircon_ledge` don't exist as rooms and their
+doors should be removed. `W`/`N` were not confirmed — guessed as
+wardrobe/sink (interior-placed, matching furniture rather than wall fixtures
+like a real window) and added to `objects.yaml` with placeholder colors, no
+`need`/`kind`; flagging this guess for correction.
+
+One edge was dropped rather than rebuilt: `bedroom_parents`' own authored
+door and `living_room`'s authored door to it (both nominally "the door to
+main_hall") can't both be real given `main_hall` = `bedroom_parents` — that's
+a self-referential edge, not a second real doorway. Since `bedroom_a`
+already connects to both `living_room` and `bedroom_parents` directly, a
+literal separate `living_room`↔`bedroom_parents` doorway is also
+geometrically impossible to add alongside that: with `bedroom_a` sandwiched
+between them (living_room north, bedroom_a middle, bedroom_parents south —
+forced by `bedroom_a`'s own two doors, one per edge), `bedroom_parents`'
+whole top wall sits below `bedroom_a`'s whole bottom wall, leaving no
+y-coordinate left for `living_room` and `bedroom_parents` to *also* touch
+directly (a simple rectangle can't have its one edge at two different world
+positions). Connectivity from `living_room` to `bedroom_parents` therefore
+routes through `bedroom_a` only. Flagging this in case a real second
+hallway-style doorway was actually intended — it would need either a
+resized room or an L-shaped corner arrangement, deliberately not attempted
+here.
+
+Beyond the door fixes, several other authored door edges also conflicted on
+which wall they were meant to share (e.g. `bedroom_a`'s door to `living_room`
+and `living_room`'s door to `bedroom_a` were both authored on their own "top"
+wall, which can't both be true for one shared wall) — these were resolved by
+picking whichever side's wall was already geometrically valid and relocating
+the other side's door tile to match, rather than preserving both rooms'
+original wall choice. `kitchen.room` itself wasn't touched by the user's
+edit, but `living_room`'s new door to it moved from `living_room`'s bottom
+wall to its right wall, so `kitchen`'s own door (and by extension
+`toilet_kitchen`'s) had to move from top-wall to left-wall to stay attached
+— a reminder that a room being unedited doesn't mean its position/orientation
+is still correct once a neighbor's layout changes.
+
+Final positions (world tile offsets): `living_room` [0,0] (unchanged, still
+the graph hub), `bedroom_b` [-1,-16] (north), `bedroom_a` [4,25] (south),
+`bedroom_parents` [2,41] (further south), `toilet_bath` [9,54] (south of
+that, en-suite), `kitchen` [21,18] (east), `toilet_kitchen` [34,18] (further
+east). Verified three ways before touching the real app: (1) a from-scratch
+overlap check across all 7 rooms' world-tile bounds, (2) a pairwise
+walkable-adjacency check confirming every room borders a walkable tile in
+some other room (not just a `D`-to-`D` check — several valid connections
+now have only one side rendered as a door mat, per the entry above, so the
+other side is plain floor with no `D` char at all), and (3) a real BFS from
+`living_room`'s spawn tile across the full composited grid confirming all 7
+rooms are reachable by an actual walk, not just pairwise-adjacent islands.
+Only then ran `tsc -b && vite build` and a Playwright pass against the live
+app (zero console errors, screenshots confirmed the avatar walks
+living_room → bedroom_a → bedroom_parents continuously).
+
+Not fixed, flagged instead: `living_room` still has an `S` (shower,
+`need: hygiene`) object placed in it, which was already true before this
+pass and reads as a likely content mistake (showers belong in a bathroom),
+but wasn't touched since relocating authored furniture without being asked
+risks guessing wrong about where it should actually go.
+
+**2026-08-15 — Floor plan corrected again after the user shared the actual
+architectural drawing (a photo of a real "5-room corridor end" flat plan).**
+The previous entry's dropped-edge conclusion was wrong: it read the user's
+`main_hall = bedroom_parents` clarification as meaning `bedroom_a`'s door to
+"main_hall" was a second, real, direct doorway to `bedroom_parents`, which
+combined with `bedroom_a` also connecting to `living_room` forced an
+impossible sandwich (living_room–bedroom_a–bedroom_parents stacked, leaving
+`living_room` and `bedroom_parents` unable to also touch directly). The
+photo shows this was a misreading — there is no `bedroom_a`↔`bedroom_parents`
+doorway at all in the real flat. `LIVING/DINING` is a single hallway-like hub
+that `BEDROOM 3`, `BEDROOM 2`, and the `MAIN BEDROOM` each open onto
+independently and directly, alongside the kitchen. "Main hall" in the user's
+door labels meant "opens onto the living/dining hallway," not "connects to
+the main bedroom specifically."
+
+Rebuilt the graph as a strict hub-and-spoke around `living_room`: `bedroom_b`
+(BEDROOM 3) and `bedroom_a` (BEDROOM 2) side by side on its north wall
+(matching their real widths, 2800mm/11 tiles + 3000mm/12 tiles ≈ living_room's
+21-tile width); `bedroom_parents` (MAIN BEDROOM) and `toilet_kitchen`
+(BATH/WC 2 — kept its pre-existing id despite the real fixture sitting near
+the main bedroom, not the kitchen, rather than rename an id referenced
+elsewhere) stacked on its east wall; `kitchen` on its south wall.
+`toilet_bath` (BATH/WC 1, en-suite) still attaches to `bedroom_parents`
+directly, per the earlier user confirmation, which the photo corroborates
+(it's drawn immediately adjacent to the main bedroom). `STORE/PANTRY`,
+`ACCESS BALCONY`, and the `AIR-CON LEDGE` remain unmodeled per the earlier
+"remove" instruction — the engine's rectangular-room-only ASCII format
+couldn't represent the kitchen's real angled wall either, so it's kept as a
+plain rectangle approximation.
+
+While rebuilding, caught and fixed one more of my own errors before it ever
+reached the app: I first wrote `bedroom_a`'s living_room-connector on its
+*top* edge, but `bedroom_a` sits north of `living_room` in this layout, so
+the shared wall is `bedroom_a`'s *bottom* edge — the top-edge tile would
+have been adjacent to nothing. Caught by re-running the same three-part
+verification as the previous entry (overlap check, walkable-adjacency check,
+full BFS from `living_room`'s spawn) before touching the real app, which is
+exactly what surfaced it: the walkable-adjacency check flagged that specific
+door tile as bordering a non-walkable neighbor. `tsc -b && vite build` and a
+Playwright pass against the live app followed clean (zero console errors,
+screenshots confirmed both north doorways render and the avatar walks into
+`bedroom_a` continuously).
+
+**2026-08-16 — Room ids renamed/restructured to match the real floor plan
+(`living_room`→`living`, `bedroom_a`→`bedroom_3`, `bedroom_b`→`bedroom_2`,
+`bedroom_parents`→`main_bedroom`, `toilet_bath`→`bath_wc_1`,
+`toilet_kitchen`→`bath_wc_2`), plus a new `main_hall` corridor and
+`store_pantry` room; then `main_hall`/`kitchen`/`bath_wc_2` repositioned
+again same-day after review against a photo of the real flat.** The rename
+landed cleanly per the room-file/world-graph checks (overlap, door-pairing,
+BFS reachability — see the three-part verification pattern established
+above), but it broke two hardcoded id references the checks don't cover
+since they're plain string constants, not grid data: `SPAWN_ROOM` in
+`src/engine/config.ts` (`'living_room'`, which no longer exists — this
+would have crashed on load) and `findNeedTarget`'s preferred-washroom-room
+check in `src/needs/needTargets.ts` (`'toilet_kitchen'`). Both fixed to the
+new ids. Lesson for any future room rename: `grep` for the old ids across
+`src/`, not just `world/`, since the parser's structural checks are blind to
+plain-string room-id references in application code.
+
+Also caught and fixed a `src/render/renderRoom.ts` wall-drawing regression
+introduced alongside the rename (the "walls flush to interior floor"
+change from 2026-08-15's entry was reworked to derive strip
+orientation/offset from *room-boundary position* — "is this tile on
+row/column 0 or width-1/height-1" — instead of from actual neighbor tiles).
+That assumption breaks for any wall run not on a room's outer perimeter,
+which the new `kitchen.room` has (its stepped-diagonal corner cut, unchanged
+content from before the rename, sits entirely inside the room). Reverted to
+neighbor-tile inspection (same approach as the original 2026-08-15 version)
+but kept the flush-to-floor offset by checking which neighbor is actually
+floor-ish, rather than assuming floor is always toward increasing x/y —
+that combination handles both perimeter walls and interior wall runs
+correctly. Verified by tracing the exact classification (`horizontal-strip`
+/ `vertical-strip` / `corner` / disconnected-fallback) of all 14 of the
+kitchen's interior wall tiles: all 14 would have hit the disconnected
+fallback under the buggy version (drawing as tiny floating squares instead
+of a connected wall), none do after the fix.
+
+Then, same day, the user supplied a hand-drawn sketch (twice — once
+unlabeled, once redrawn on top of a generated diagram of the current
+layout) showing `main_hall`, `main_bedroom`, `bath_wc_1`, `bath_wc_2`, and
+`kitchen` needed repositioning again: `main_hall` shrinks from a corridor
+that used to run the full house height down to a small 6×6 pocket bordering
+only `living` and `main_bedroom`; `kitchen` moves from east of `main_hall`
+to directly south of `living` (new door, world x=20) and east of
+`bath_wc_2` (reusing `bath_wc_2`'s existing west door, now facing a
+different neighbor); `bath_wc_1`/`bath_wc_2` keep their existing size,
+position, and mutual door, but lose their old doors to `main_hall` (which
+physically no longer reaches them) and gain no replacement direct door to
+`living` — confirmed explicitly by the user (baths are reached only via
+`main_bedroom` → `bath_wc_1` → `bath_wc_2` → `kitchen` → `living`, a single
+chain, not multiple redundant routes). This leaves an unoccupied (void)
+gap in world-tile space between `main_hall`/`bath_wc_1` and `living`'s
+lower/right wall — flagged as an accepted cosmetic side effect (renders as
+black void), not a bug, since nothing in the confirmed door list requires
+filling it.
+
+Given a hand sketch is inherently imprecise pixel-to-tile, the door graph
+was confirmed in plain language before implementing (does `main_hall` keep
+a door to `living`? do the baths get a direct `living` door? does
+`bath_wc_2` still connect straight to `kitchen`, or only via `living`→
+`kitchen`?) rather than guessed from pixel positions — guessing wrong here
+would mean re-authoring 5 room files a second time. Re-ran the full
+three-part verification (overlap/door-pairing/BFS) plus `tsc -b`,
+`vite build`, and a live Playwright console-error check after implementing;
+also regenerated a to-scale SVG diagram of the new layout (published as an
+artifact) for the user to visually confirm against their sketch, rather
+than asserting correctness from the text description alone.
+
+**2026-08-16 — Layout v4: all 9 rooms regenerated from a single script, and
+the "kitchen can't touch living" claim from the previous entry retracted as
+wrong.** The previous entry concluded that `kitchen` could not share a wall
+with `living` because the `main_hall`/`main_bedroom`/baths column occupied
+`living`'s entire east wall. That reasoning was wrong: it assumed the column
+and `kitchen` had to span the *same* vertical range. In the user's sketch
+`kitchen` extends well below `living`'s bottom edge, so the column only needs
+to be shorter than `living` — `kitchen` then occupies the leftover rows and
+shares `living`'s lower-right wall directly. Concretely: the column
+(`main_hall` 4 + `main_bedroom` 8 + `bath_wc_1` 5 + `bath_wc_2` 4 = 21 tiles,
+y16–36) ends before `living` does (y16–40), and `kitchen` (y37–55) overlaps
+`living`'s last four rows at the x23|x24 seam. Lesson: when a room can't be
+placed, check whether the blocking assumption is "these must span the same
+range" before declaring a geometric impossibility — the engine's rectangles
+compose fine as long as *some* row-range overlaps at a shared x seam.
+
+Two other corrections in this pass, both from re-reading the sketch rather
+than from new information: `bedroom_2` moved from above `living` to above
+`main_hall` (pos [12,0]→[24,0], with `bedroom_3` taking [12,0]) — the sketch
+shows only `bedroom_3` above `living`, with `living` extending further west
+than any bedroom; and the two baths were re-authored long-not-tall (12×5 and
+12×4) with **no door between them**, each reached independently
+(`bath_wc_1` en-suite off `main_bedroom`, `bath_wc_2` off `kitchen`), per
+explicit user correction. Final door graph: living↔{bedroom_3, main_hall,
+kitchen, store_pantry}, main_hall↔{bedroom_2, main_bedroom},
+main_bedroom↔bath_wc_1, kitchen↔bath_wc_2.
+
+Process change worth keeping: after three failed hand-editing rounds (each
+introducing off-by-one door rows or mis-sized grid rows that the validator
+then caught), all 9 room files are now generated by one script
+(scratchpad `gen_rooms.cjs`) that builds each grid programmatically from
+(width, height, door offsets, furniture offsets) rather than by editing ASCII
+by hand. Every door is written as a single expression whose world coordinate
+is stated in a trailing comment, which makes the pairing checkable by reading
+the script instead of by counting characters in a grid. The scratchpad
+verification set also grew a fourth check beyond the established
+overlap/door-pairing/BFS trio: a door-*graph* dump (which room pairs are
+actually connected, plus a per-room fixture inventory) that asserts the
+intended adjacency list directly, since all three earlier checks pass
+happily on a layout that is internally consistent but connects the wrong
+rooms — which is exactly the failure mode of the previous two entries.
+
+**2026-08-16 — Layout v5: `bath_wc_2` enlarged to match `bath_wc_1` (both
+12×5), and the one-tile-entrance convention restored across every
+connection.** Layout v4 had written a `D` on *both* sides of every
+connection, which renders as two stacked door-mat squares and reads as a
+2-tile-wide opening — the exact problem the 2026-08-15 entry had already
+solved and which v4 silently regressed. Restored that convention: each
+connection now writes exactly one `D` (on the room nearer `living` in the
+house graph) and opens the facing tile as plain walkable floor. Both tiles
+stay walkable, so crossing still works; only the mat visual is single-square
+now. The door-tile count is a direct check on this — 8 connections must
+produce exactly 8 `D` tiles, and the validator's per-door "opens onto plain
+floor" note is the expected state, not a warning.
+
+Enlarging `bath_wc_2` from 12×4 to 12×5 pushed the right-hand column from 21
+to 22 tiles, so `kitchen` moved down one row (pos [24,37]→[24,38]) and its
+`living` door moved with it (world y38→y39). `living`/`kitchen` still overlap
+for three rows (38–40) at the x23|x24 seam, which is enough for the single-
+tile door.
+
+The generator script was also restructured in this pass to declare the layout
+as data — a `SPEC` table of room sizes/positions, a `CONNECTIONS` list of
+(door tile, facing tile) world-coordinate pairs, and a flat `FURNITURE` list
+in world coordinates — rather than as per-room imperative grid edits. Every
+entry is validated as it is applied: connection tiles are asserted adjacent
+and in different rooms, and furniture is asserted to land on plain floor, so
+a mistyped coordinate throws at generation time instead of producing a
+silently wrong grid. This is what makes the layout reviewable as a table of
+world coordinates instead of by counting characters in nine ASCII blocks.

@@ -47,7 +47,7 @@ export function findNeedTarget(world: World, need: Need): NeedTarget | null {
   }
   if (matches.length === 0) return null;
 
-  const preferred = matches.find((m) => m.roomId === 'toilet_kitchen') ?? matches[0];
+  const preferred = matches.find((m) => m.roomId === 'bath_wc_2') ?? matches[0];
   const room = world.rooms[preferred.roomId];
   const tile = findInteractionTile(room, preferred.ax, preferred.ay, preferred.def.footprint);
   if (!tile) return null;
