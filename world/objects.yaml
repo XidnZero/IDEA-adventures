@@ -2,6 +2,18 @@
 # footprint is [width, height] in tiles, anchored at the grid character's tile
 # and extending right/down. Never draw furniture shape character-by-character
 # in a room file — one anchor char here is the whole authoring cost.
+#
+# Optional `flip: x | y | both` mirrors the sprite (real art and the
+# code-drawn placeholder alike) within its own footprint — e.g. a sofa
+# authored facing right can be flipped to face left with `flip: x`, without
+# touching footprint or needing a second art file. This applies to every
+# placed instance of that character; there's no per-instance override.
+#
+# Optional `rotate: 90 | 180 | 270` turns the sprite about its own footprint's
+# center, applied after flip. `footprint` always describes the object's real
+# world-space size — for 90/270 it must be authored already-rotated: a sprite
+# natively 4 wide x 2 tall, turned upright with `rotate: 90`, needs
+# `footprint: [2, 4]`, not `[4, 2]` (which would stretch it, not rotate it).
 
 F:
   name: fridge
@@ -28,8 +40,10 @@ K:
 
 C:
   name: sofa
-  footprint: [2, 1]
+  footprint: [2, 4] # rotated 90 from its native 4x2 landscape art
   color: "#c98787"
+  rotate: 90
+  flip: y
 
 B:
   name: bed
@@ -81,3 +95,52 @@ N:
   name: sink
   footprint: [1, 1]
   color: "#cfe3ea"
+
+# --- objects with real authored art (public/assets/<name>.svg) --------------
+# Footprints follow each sprite's own aspect ratio so the art isn't stretched:
+# drawObject fills footprint[0]xfootprint[1] tiles exactly.
+
+V:
+  name: tv
+  footprint: [1, 5] # 680x240 art
+  color: "#d9bd8f"
+  kind: interactable
+  rotate: 90
+  flip : y
+
+G:
+  name: piano
+  footprint: [2, 1] # 680x280 art
+  color: "#f2e8d2"
+  kind: interactable
+
+E:
+  name: playpen
+  footprint: [6, 4] # 680x480 art
+  color: "#dcdcdc"
+
+A:
+  name: beanbag_blue
+  footprint: [1, 1] # 360x360 art
+  color: "#90a8c4"
+  kind: interactable
+
+Z:
+  name: beanbag_grey
+  footprint: [1, 1] # 360x360 art
+  color: "#b7bbc0"
+  kind: interactable
+
+Q:
+  name: beanbag_yellow
+  footprint: [1, 1] # 360x360 art
+  color: "#e3c24c"
+  kind: interactable
+
+# Windows sit on the floor tile against a wall rather than on the wall tile
+# itself — object footprints must land on floor (roomLoader.ts), and walls are
+# never walkable. Reads as "against the wall" visually.
+I:
+  name: window
+  footprint: [2, 1] # 400x40 art
+  color: "#1a1f26"

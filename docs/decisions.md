@@ -652,3 +652,104 @@ and in different rooms, and furniture is asserted to land on plain floor, so
 a mistyped coordinate throws at generation time instead of producing a
 silently wrong grid. This is what makes the layout reviewable as a table of
 world coordinates instead of by counting characters in nine ASCII blocks.
+
+**2026-08-16 — First real art landed: 9 authored SVG sprites wired into the
+object legend, plus three service-worker bugs found while verifying them.**
+The sprites in `D:\Repo\Sprites` were copied into `public/assets/` renamed to
+match `ObjectDef.name` (the key `requestAsset()` already resolves), so no new
+lookup mechanism was needed: `Sofa.svg`→`sofa.svg` and `DiningTable.svg`→
+`table.svg` fill existing slots, and `tv`/`piano`/`playpen`/`beanbag_blue`/
+`beanbag_grey`/`beanbag_yellow`/`window` are new legend entries (chars
+`V`/`G`/`E`/`A`/`Z`/`Q`/`I`). Each new object's footprint is chosen from its
+sprite's own aspect ratio (`drawObject` fills footprint tiles exactly, so a
+mismatched footprint stretches the art) — e.g. tv 680x240 → [3,1], playpen
+680x480 → [3,2], beanbags 360x360 → [1,1].
+
+`engine/assets.ts` now tries extensions in order (`svg`, then `png`) instead
+of hardcoding `.png`. SVG is preferred because an object's on-screen size is
+derived from its tile footprint, so raster art would need re-exporting per
+footprint/zoom while one vector file covers every case. The placeholder
+fallback is unchanged in spirit: running out of candidate extensions is the
+ordinary "no art yet" state, not an error.
+
+Windows are authored on the floor tile against a wall, not on the wall tile
+itself — `roomLoader.ts` requires object footprints to land on floor, and
+walls are never walkable. Worth revisiting if wall-mounted fixtures become
+common (R18's window lighting would want it), but it reads correctly today.
+
+Three service-worker problems surfaced only because real art finally existed;
+all were found by testing against `vite build` + `vite preview` rather than
+the dev server, per the convention in the R21/R22 entry above:
+
+1. **The `/assets/*.png` carve-out never cached anything**, which was correct
+   when no art existed but would have rendered placeholders offline for
+   objects that now have real sprites. It now checks cache → network → empty
+   200, and caches successes. Extended to `.svg` as well.
+2. **`res.ok` is not sufficient to decide a response is real art.** Both the
+   dev server and `vite preview` answer a *missing* file with a 200 serving
+   `index.html` (Content-Type `text/html`), so caching on status alone stored
+   a copy of the HTML shell under every empty art slot and pinned a stale
+   shell at those URLs. Fixed by requiring `Content-Type: image/*` before
+   caching. Verified by asserting nothing with `text/html` is cached under
+   `/assets/`.
+3. **`Vary: Origin` broke offline boot entirely — a pre-existing bug, not a
+   regression from this work.** `vite preview` sends `Vary: Origin`; cache
+   entries are written from plain same-origin `fetch(url)` calls that send no
+   `Origin` header, while `<script type="module">` is fetched in CORS mode and
+   *does* send one. Default Vary-aware `caches.match` therefore missed the
+   cached JS bundle and the app 504'd offline with a blank page — despite the
+   bundle being visibly present in the cache. Fixed with a shared
+   `MATCH_OPTS = { ignoreVary: true }` on every cache read; safe because
+   everything cached is a same-origin GET of a static file. The R21/R22 entry
+   above claims offline was verified working, so this likely regressed with a
+   later Vite version's preview-server headers — flagging that the earlier
+   verification cannot be assumed still valid.
+
+Art also needed an explicit precache path: it is fetched by `<img>`, so
+`precacheFromIndex()` (which scans index.html) never sees it, and on a
+first-ever visit the worker is still installing while those images load, so
+it doesn't observe them as fetches either — real art only became available
+offline from the *second* visit. Rather than hand-maintain a list in `sw.js`
+(the same sync burden `precacheFromIndex` was written to avoid), the page
+posts the list it actually uses via a new `precacheArt()` in
+`registerServiceWorker.ts`, derived from `world.objects`' names — so adding
+art to objects.yaml needs no matching worker edit. Verified end-to-end: after
+a single online load then `setOffline(true)`, the canvas renders, all nine
+sprites decode at their true intrinsic sizes, and there are zero console
+errors.
+
+**2026-08-16 — Added optional `flip: x | y | both` to `ObjectDef`.** No
+existing field could orient a sprite — footprint only sizes it. Implemented
+as a canvas transform in `drawObject` (translate to the footprint's own
+center, `scale(-1,1)`/`scale(1,-1)`, translate back, draw, restore) rather
+than as pre-flipped art files or per-tile logic, so it applies uniformly to
+both real art and the code-drawn placeholder glyph with one code path. Lives
+in `objects.yaml` (per object *type*), matching how footprint/color/kind are
+already authored — every placed instance of that character gets the same
+orientation; there is no per-instance override, since a room file only ever
+authors a single anchor character per object. Verified the transform in
+isolation (drawing `Sofa.svg`, whose two mismatched throw pillows make a
+mirror obvious) before wiring it in, rather than trusting the math unverified
+— confirmed the pillows swap sides exactly as expected.
+
+**2026-08-16 — Added `rotate: 90 | 180 | 270` to `ObjectDef`, alongside `flip`.**
+Same shape as `flip`: applies to every placed instance of the object type,
+lives in `objects.yaml`, and `footprint` continues to describe the object's
+real world-space/collision box — for 90/270 that box has swapped aspect
+versus the source art's native orientation (a 4-wide-by-2-tall landscape
+sprite rotated upright needs `footprint: [2, 4]`, not `[4, 2]`, or the art
+stretches instead of turning). Implemented in `drawObject` as one more step
+in the existing transform stack: translate to the footprint's center,
+`rotate(angle)`, then `flip`'s `scale(...)`, draw at swapped pre-rotation
+dimensions when `rotate` is 90/270, restore. Rotate is applied after flip
+(rotate() called before scale() in the code, so scale acts in the object's
+own frame first) — an arbitrary but now-fixed order, since the two rarely
+combine in practice.
+
+Applied to `sofa` as the first real use: `footprint: [2, 4]`, `rotate: 90`.
+Verified with the same isolated-canvas technique as the `flip` entry above
+(reproducing `drawObject`'s exact math outside the app, not trusting it
+unverified) — confirmed the rotated sofa fills its green-outlined footprint
+box exactly, no stretching, and the pillow layout turns 90° as expected.
+
+**2026-08-16 — Follow-up sizing pass on the newly-added sprites: `sofa` combines `flip: y` with `rotate: 90`, `tv` rotated 90 into a tall footprint `[1, 5]`, `playpen` enlarged to `[6, 4]`.** No code changes — `flip`+`rotate` composing correctly on the same object (sofa) is the first real use of both together, confirming the "rotate applied after flip" order from the entry above holds up outside the isolated test case. Verified with the same three checks as every layout change in this doc: the room-file validator (overlap/door-pairing/BFS) reports the larger footprints fit without collision, `tsc -b`/`vite build` are clean, and a live Playwright pass shows zero console errors.

@@ -14,6 +14,20 @@ export interface ObjectDef {
   // 'minigame' = tapping it launches a full-screen mini-game overlay (R17)
   // instead of a bounce; entry is diegetic (tap the object in the world).
   kind?: 'npc' | 'interactable' | 'minigame';
+  // Mirrors the sprite (real art and the code-drawn placeholder's glyph
+  // alike) about its own footprint. Applies to every placed instance of this
+  // object type — there's no per-instance override, since a room file only
+  // ever authors a single anchor character per object. Footprint dimensions
+  // are unchanged by flipping ('x' still means "wide", not "rotated"); this
+  // mirrors the art within the same footprint, it does not rotate it.
+  flip?: 'x' | 'y' | 'both';
+  // Rotates the sprite about its own footprint's center. `footprint` always
+  // describes the object's actual world-space/collision size (unchanged by
+  // this field, same rule as `flip`) — for 90/270, author `footprint` as the
+  // already-rotated [width, height] (e.g. a sprite natively drawn 4 wide x 2
+  // tall, rotated 90 to stand upright, needs footprint [2, 4], not [4, 2]).
+  // Applied after `flip`.
+  rotate?: 90 | 180 | 270;
 }
 
 // Doors carry no payload beyond their grid position: rooms are composited

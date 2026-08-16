@@ -1,0 +1,44 @@
+<svg width="680" height="480" viewBox="0 0 680 480" xmlns="http://www.w3.org/2000/svg">
+<rect x="190" y="170" width="300" height="260" rx="18" fill="#dcdcdc" stroke="#33302c" stroke-width="5"/>
+<ellipse cx="340" cy="300" rx="140" ry="60" fill="#ffffff" opacity="0.06"/>
+<rect x="192" y="158" width="46" height="12" rx="5" fill="#f2ede0" stroke="#33302c" stroke-width="1.5"/>
+<rect x="242" y="158" width="46" height="12" rx="5" fill="#a7abae" stroke="#33302c" stroke-width="1.5"/>
+<rect x="292" y="158" width="46" height="12" rx="5" fill="#f2ede0" stroke="#33302c" stroke-width="1.5"/>
+<rect x="342" y="158" width="46" height="12" rx="5" fill="#a7abae" stroke="#33302c" stroke-width="1.5"/>
+<rect x="392" y="158" width="46" height="12" rx="5" fill="#f2ede0" stroke="#33302c" stroke-width="1.5"/>
+<rect x="442" y="158" width="46" height="12" rx="5" fill="#a7abae" stroke="#33302c" stroke-width="1.5"/>
+<rect x="192" y="430" width="46" height="12" rx="5" fill="#a7abae" stroke="#33302c" stroke-width="1.5"/>
+<rect x="242" y="430" width="46" height="12" rx="5" fill="#f2ede0" stroke="#33302c" stroke-width="1.5"/>
+<rect x="292" y="430" width="46" height="12" rx="5" fill="#a7abae" stroke="#33302c" stroke-width="1.5"/>
+<rect x="342" y="430" width="46" height="12" rx="5" fill="#f2ede0" stroke="#33302c" stroke-width="1.5"/>
+<rect x="392" y="430" width="46" height="12" rx="5" fill="#a7abae" stroke="#33302c" stroke-width="1.5"/>
+<rect x="442" y="430" width="46" height="12" rx="5" fill="#f2ede0" stroke="#33302c" stroke-width="1.5"/>
+<rect x="490" y="170" width="12" height="62" rx="5" fill="#a7abae" stroke="#33302c" stroke-width="1.5"/>
+<rect x="490" y="236" width="12" height="62" rx="5" fill="#f2ede0" stroke="#33302c" stroke-width="1.5"/>
+<rect x="490" y="302" width="12" height="62" rx="5" fill="#a7abae" stroke="#33302c" stroke-width="1.5"/>
+<rect x="490" y="368" width="12" height="62" rx="5" fill="#f2ede0" stroke="#33302c" stroke-width="1.5"/>
+<rect x="178" y="170" width="12" height="49" rx="5" fill="#f2ede0" stroke="#33302c" stroke-width="1.5"/>
+<rect x="178" y="223" width="12" height="49" rx="5" fill="#a7abae" stroke="#33302c" stroke-width="1.5"/>
+<rect x="178" y="382" width="12" height="49" rx="5" fill="#f2ede0" stroke="#33302c" stroke-width="1.5"/>
+<line x1="190" y1="272" x2="190" y2="382" stroke="#6b6660" stroke-width="3" stroke-dasharray="7,5"/>
+<circle cx="190" cy="170" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="490" cy="170" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="190" cy="430" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="490" cy="430" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="240" cy="170" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="290" cy="170" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="340" cy="170" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="390" cy="170" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="440" cy="170" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="240" cy="430" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="290" cy="430" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="340" cy="430" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="390" cy="430" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="440" cy="430" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="490" cy="234" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="490" cy="300" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="490" cy="366" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="190" cy="221" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="190" cy="272" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+<circle cx="190" cy="382" r="6" fill="#dc9a55" stroke="#a8672f" stroke-width="1.5"/>
+</svg>

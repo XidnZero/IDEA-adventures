@@ -27,7 +27,7 @@ import {
 } from './minigame/toyboxSort';
 import { getLightingState, type LightingState } from './engine/dayNight';
 import { GATE_HOLD_MS, GATE_JITTER_PX, inGateZone, renderParentGate } from './ui/parentGate';
-import { registerServiceWorker } from './engine/registerServiceWorker';
+import { precacheArt, registerServiceWorker } from './engine/registerServiceWorker';
 
 registerServiceWorker();
 
@@ -38,6 +38,11 @@ const ctx = canvas.getContext('2d')!;
 
 const world = loadWorld();
 const worldBounds = getWorldBoundsPx(world);
+
+// Make this session's art available offline from the very first visit (see
+// precacheArt). Derived from the world's own legend, so new art in
+// objects.yaml is covered automatically.
+precacheArt([...new Set(Object.values(world.objects).map((o) => o.name))]);
 
 const spawnRoom = world.rooms[SPAWN_ROOM];
 const spawnWorldTile = roomTileToWorldTile(spawnRoom, spawnRoom.spawn[0], spawnRoom.spawn[1]);

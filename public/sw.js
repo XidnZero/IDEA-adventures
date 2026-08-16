@@ -9,6 +9,15 @@
 // nothing else to fetch once the shell is cached.
 const CACHE_NAME = 'idea-adventures-shell-v1';
 
+// Every cache read goes through this. `ignoreVary` is required, not a
+// nicety: the dev/preview servers answer with `Vary: Origin`, and entries are
+// stored from plain same-origin `fetch(url)` calls that send no `Origin`
+// header — while `<script type="module">` is fetched in CORS mode and *does*
+// send one. Default Vary-aware matching therefore treats the cached bundle as
+// a miss and the app cannot boot offline at all. Everything cached here is a
+// same-origin GET of a static file, so varying on Origin carries no meaning.
+const MATCH_OPTS = { ignoreVary: true };
+
 async function precacheFromIndex(cache) {
   const res = await fetch('/index.html', { cache: 'no-store' });
   await cache.put('/index.html', res.clone());
@@ -41,6 +50,36 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
+// Art slots live in public/assets/ and are fetched by <img> rather than linked
+// from index.html, so precacheFromIndex() can't discover them, and on a
+// first-ever visit this worker is still installing while they load — so it
+// doesn't see them as fetches either. The page therefore posts the list it
+// actually uses (derived from world data, see registerServiceWorker.ts) once
+// the worker is ready. Responses that aren't images are skipped for the same
+// reason as in the fetch handler: a missing file answers 200 with index.html.
+self.addEventListener('message', (event) => {
+  const data = event.data;
+  if (!data || data.type !== 'precache-art' || !Array.isArray(data.urls)) return;
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(
+        data.urls.map((u) =>
+          cache.match(u, MATCH_OPTS).then((hit) => {
+            if (hit) return undefined;
+            return fetch(u)
+              .then((res) => {
+                const type = res && res.headers ? res.headers.get('Content-Type') || '' : '';
+                if (res && res.ok && type.startsWith('image/')) return cache.put(u, res);
+                return undefined;
+              })
+              .catch(() => undefined);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
@@ -56,31 +95,54 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // Art-asset slots (public/assets/<name>.png, requested by
+  // Art-asset slots (public/assets/<name>.svg|.png, requested by
   // engine/assets.ts's requestAsset()) are deliberately allowed to be
   // missing — CLAUDE.md's placeholder-fallback pattern already handles that
   // silently per-layer/per-object, purely via the <img>'s error event, with
-  // no dependency on HTTP status. Online, this is left to behave exactly as
-  // it would with no service worker at all (real file present -> loads;
-  // absent -> a normal 404, silently caught by requestAsset()'s onerror).
-  // Offline with nothing cached (true today, since no real art exists yet),
-  // a raw network failure would surface as a console-visible connection
-  // error even though nothing is actually broken — so that specific case
-  // gets a harmless 200 response that isn't valid image data, which still
-  // fails to decode (still triggers the same onerror fallback) without
-  // logging anything. NOTE: checks the .png extension, not just the
-  // "/assets/" prefix — Vite's own built JS bundle also lives under
-  // "/assets/" (e.g. /assets/index-<hash>.js) and must still be cached
-  // normally.
-  if (url.pathname.startsWith('/assets/') && url.pathname.endsWith('.png')) {
+  // no dependency on HTTP status. A slot that has no file is not an error;
+  // requestAsset() just draws its code-drawn placeholder instead.
+  //
+  // Real art now exists for some of these slots, so they are cached like any
+  // other asset once fetched successfully — otherwise the app would render
+  // placeholders offline for objects that have real sprites. The order below
+  // is therefore: cache, then network (caching a successful response), then
+  // a harmless empty 200 only if both miss. That last step matters because a
+  // raw service-worker-observed network failure is console-visible even when
+  // nothing is broken, whereas an empty 200 fails to decode as an image and
+  // so triggers exactly the same requestAsset() onerror fallback silently.
+  //
+  // NOTE: checks the extension, not just the "/assets/" prefix — Vite's own
+  // built JS bundle also lives under "/assets/" (e.g.
+  // /assets/index-<hash>.js) and must still go through the normal path.
+  if (url.pathname.startsWith('/assets/') && /\.(svg|png)$/.test(url.pathname)) {
     event.respondWith(
-      fetch(req).catch(() => new Response('', { status: 200, headers: { 'Content-Type': 'text/plain' } })),
+      caches.match(req, MATCH_OPTS).then((cached) => {
+        if (cached) return cached;
+        return fetch(req)
+          .then((res) => {
+            // `res.ok` is NOT sufficient to decide this is real art: both the
+            // Vite dev server and `vite preview` answer a missing file with a
+            // 200 serving index.html itself, so caching on status alone would
+            // store a copy of the HTML shell under every empty art slot and
+            // pin a stale shell at those URLs forever. Only cache a response
+            // that actually claims to be an image; anything else is passed
+            // through uncached and fails to decode, which is precisely the
+            // signal requestAsset()'s onerror fallback already expects.
+            const type = res && res.headers ? res.headers.get('Content-Type') || '' : '';
+            if (res && res.ok && type.startsWith('image/')) {
+              const copy = res.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+            }
+            return res;
+          })
+          .catch(() => new Response('', { status: 200, headers: { 'Content-Type': 'text/plain' } }));
+      }),
     );
     return;
   }
 
   event.respondWith(
-    caches.match(req).then((cached) => {
+    caches.match(req, MATCH_OPTS).then((cached) => {
       if (cached) {
         // Serve the cache instantly; refresh it in the background so a
         // later online reload picks up any change. Never lets a background

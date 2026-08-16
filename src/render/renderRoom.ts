@@ -134,24 +134,52 @@ function drawObject(
 ): void {
   const px = tx * TILE_PX;
   const py = ty * TILE_PX + bounceOffsetPx;
-  const w = def.footprint[0] * TILE_PX;
+  const w = def.footprint[0] * TILE_PX; // the actual on-screen/collision box
   const h = def.footprint[1] * TILE_PX;
+  const cx = px + w / 2;
+  const cy = py + h / 2;
+
+  const flipX = def.flip === 'x' || def.flip === 'both';
+  const flipY = def.flip === 'y' || def.flip === 'both';
+  const angle = ((def.rotate ?? 0) * Math.PI) / 180;
+  const swapped = def.rotate === 90 || def.rotate === 270;
+
+  const transformed = flipX || flipY || angle !== 0;
+  if (transformed) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    // Rotate called before scale so flip happens in the object's own frame
+    // and rotate turns the (already-flipped) result — matches ObjectDef's
+    // "rotate is applied after flip" doc.
+    if (angle !== 0) ctx.rotate(angle);
+    if (flipX || flipY) ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+    ctx.translate(-cx, -cy);
+  }
+
+  // For a 90/270 rotation, the box is drawn pre-rotation at swapped
+  // dimensions (art wants w<->h) so that once the canvas rotation above is
+  // applied, it exactly fills the real w x h footprint box.
+  const drawW = swapped ? h : w;
+  const drawH = swapped ? w : h;
+  const drawPx = cx - drawW / 2;
+  const drawPy = cy - drawH / 2;
 
   const asset = requestAsset(def.name);
   if (asset) {
-    ctx.drawImage(asset, px, py, w, h);
-    return;
+    ctx.drawImage(asset, drawPx, drawPy, drawW, drawH);
+  } else {
+    const pad = 4;
+    roundRect(ctx, drawPx + pad, drawPy + pad, drawW - pad * 2, drawH - pad * 2, 8);
+    ctx.fillStyle = def.color;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    drawGlyph(ctx, def.name, drawPx, drawPy, drawW, drawH);
   }
 
-  const pad = 4;
-  roundRect(ctx, px + pad, py + pad, w - pad * 2, h - pad * 2, 8);
-  ctx.fillStyle = def.color;
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  drawGlyph(ctx, def.name, px, py, w, h);
+  if (transformed) ctx.restore();
 }
 
 function roundRect(
