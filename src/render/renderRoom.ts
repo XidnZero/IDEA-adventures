@@ -1,4 +1,5 @@
 import type { ObjectDef, RoomDef } from '../world/types';
+import type { LightingState } from '../engine/dayNight';
 import { TILE_PX } from '../engine/config';
 import { requestAsset } from '../engine/assets';
 
@@ -63,7 +64,7 @@ export function renderRoom(
   ctx: CanvasRenderingContext2D,
   room: RoomDef,
   getBounceOffsetPx?: (tx: number, ty: number) => number,
-  isNight?: boolean,
+  lighting?: LightingState,
 ): void {
   // Pass 1: base tiles. Object-covered tiles (anchor or footprint overflow)
   // sit on floor, so they're drawn as floor here too.
@@ -99,12 +100,17 @@ export function renderRoom(
         // tapping them opens the overlay instead.
         const bounces = tile.def.kind === 'npc' || tile.def.kind === 'interactable';
         const bounce = bounces ? (getBounceOffsetPx?.(x, y) ?? 0) : 0;
-        // R18: lamps stay visibly lit at night — the only "interior light"
-        // object authored so far (see docs/decisions.md). Drawn as a soft
-        // warm glow behind the lamp, purely from `isNight` (day/night clock,
-        // R19) — nothing here reads or touches need state.
-        if (isNight && tile.def.name === 'lamp') {
-          drawLampGlow(ctx, x, y, tile.def);
+        // R18: the house's two light sources cross-fade against each other
+        // over dawn/dusk — lamps come up as daylight through the windows
+        // goes down. Both are driven purely by `lighting.dayness` (day/night
+        // clock, R19); nothing here reads or touches need state.
+        if (lighting) {
+          if (tile.def.name === 'lamp' && lighting.dayness < 1) {
+            drawGlow(ctx, room, x, y, tile.def, LAMP_GLOW, 1 - lighting.dayness, 0, 0);
+          } else if (tile.def.name === 'window' && lighting.dayness > 0) {
+            const spill = daylightSpillDirection(room, x, y, tile.def);
+            drawGlow(ctx, room, x, y, tile.def, DAYLIGHT_GLOW, lighting.dayness, spill.dx, spill.dy);
+          }
         }
         drawObject(ctx, x, y, tile.def, bounce);
       }
@@ -112,17 +118,95 @@ export function renderRoom(
   }
 }
 
-function drawLampGlow(ctx: CanvasRenderingContext2D, tx: number, ty: number, def: ObjectDef): void {
-  const cx = tx * TILE_PX + (def.footprint[0] * TILE_PX) / 2;
-  const cy = ty * TILE_PX + (def.footprint[1] * TILE_PX) / 2;
-  const r = TILE_PX * 1.6;
+interface GlowSpec {
+  rgb: string;
+  peakAlpha: number;
+  radiusTiles: number;
+}
+
+// Warm interior bulb light; daylight is cooler, wider, and stronger because
+// it's a whole wall opening rather than a single fixture.
+const LAMP_GLOW: GlowSpec = { rgb: '255,224,140', peakAlpha: 0.55, radiusTiles: 1.6 };
+const DAYLIGHT_GLOW: GlowSpec = { rgb: '255,250,225', peakAlpha: 0.42, radiusTiles: 3.2 };
+
+/**
+ * Which way daylight falls into the room from a window. Windows sit on the
+ * floor tile against a wall (see objects.yaml), so the spill goes away from
+ * whichever side the wall is on — derived from the actual grid rather than
+ * assumed to be "downward", since a window on a left or right wall is just
+ * as authorable and would otherwise light the wrong side.
+ */
+function daylightSpillDirection(
+  room: RoomDef,
+  tx: number,
+  ty: number,
+  def: ObjectDef,
+): { dx: number; dy: number } {
+  const [w, h] = def.footprint;
+  const sides: Array<{ dx: number; dy: number; probe: [number, number] }> = [
+    { dx: 0, dy: 1, probe: [tx, ty - 1] }, // wall above -> light falls down
+    { dx: 0, dy: -1, probe: [tx, ty + h] },
+    { dx: 1, dy: 0, probe: [tx - 1, ty] },
+    { dx: -1, dy: 0, probe: [tx + w, ty] },
+  ];
+  for (const side of sides) {
+    if (isWallAt(room, side.probe[0], side.probe[1])) return { dx: side.dx, dy: side.dy };
+  }
+  return { dx: 0, dy: 1 }; // free-standing window: fall back to "into the room"
+}
+
+/**
+ * Soft radial light pool centred on an object's footprint, optionally pushed
+ * one tile along (dirX, dirY) so a wall-mounted source lights the room rather
+ * than the wall behind it. `strength` scales the whole thing so sources can
+ * fade in and out across dawn/dusk instead of popping.
+ *
+ * Clipped to the floor tiles it can actually reach. Rooms are composited
+ * edge-to-edge into one continuous scene (R1) and walls render as a thin
+ * strip with the rest of the tile left as background, so an unclipped
+ * gradient lights the black void outside the house — it reads as daylight
+ * leaking through the walls. Clipping to floor rather than to the room's
+ * bounding box also handles rooms whose outline isn't a plain rectangle
+ * (the kitchen's stepped corner), and costs only the tiles the glow covers.
+ */
+function drawGlow(
+  ctx: CanvasRenderingContext2D,
+  room: RoomDef,
+  tx: number,
+  ty: number,
+  def: ObjectDef,
+  spec: GlowSpec,
+  strength: number,
+  dirX: number,
+  dirY: number,
+): void {
+  const r = TILE_PX * spec.radiusTiles;
+  const cx = tx * TILE_PX + (def.footprint[0] * TILE_PX) / 2 + dirX * TILE_PX;
+  const cy = ty * TILE_PX + (def.footprint[1] * TILE_PX) / 2 + dirY * TILE_PX;
+  const alpha = spec.peakAlpha * strength;
+
+  ctx.save();
+  ctx.beginPath();
+  const minTx = Math.max(0, Math.floor((cx - r) / TILE_PX));
+  const maxTx = Math.min(room.width - 1, Math.floor((cx + r) / TILE_PX));
+  const minTy = Math.max(0, Math.floor((cy - r) / TILE_PX));
+  const maxTy = Math.min(room.height - 1, Math.floor((cy + r) / TILE_PX));
+  for (let y = minTy; y <= maxTy; y++) {
+    for (let x = minTx; x <= maxTx; x++) {
+      if (!isFloorishAt(room, x, y)) continue;
+      ctx.rect(x * TILE_PX, y * TILE_PX, TILE_PX, TILE_PX);
+    }
+  }
+  ctx.clip();
+
   const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-  gradient.addColorStop(0, 'rgba(255,224,140,0.55)');
-  gradient.addColorStop(1, 'rgba(255,224,140,0)');
+  gradient.addColorStop(0, `rgba(${spec.rgb},${alpha})`);
+  gradient.addColorStop(1, `rgba(${spec.rgb},0)`);
   ctx.fillStyle = gradient;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
 }
 
 function drawObject(

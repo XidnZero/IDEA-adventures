@@ -20,6 +20,11 @@ export interface LightingState {
   b: number;
   alpha: number;
   isNight: boolean; // true = interior lights (lamps) render lit, per R18
+  // 0 = full night, 1 = full day, smooth across dawn/dusk. `isNight` is the
+  // same value thresholded; renderers that want to cross-fade (lamps out,
+  // daylight through windows in) use this instead so the transition isn't a
+  // jump-cut at the threshold.
+  dayness: number;
 }
 
 function clamp01(v: number): number {
@@ -63,5 +68,6 @@ export function getLightingState(date: Date = new Date()): LightingState {
     b: Math.round(lerp(NIGHT_COLOR.b, DAY_COLOR.b, dayness)),
     alpha: lerp(NIGHT_ALPHA, DAY_ALPHA, dayness),
     isNight: dayness < 0.5,
+    dayness,
   };
 }

@@ -831,3 +831,43 @@ around will essentially never see hunger or the toilet. Left as-is because
 retuning the constants is a design call about how the care loop should feel,
 not a correctness fix; the test now runs four movement profiles (0/15/60/100%)
 so it exercises both branches regardless of how this is eventually resolved.
+
+**2026-08-17 — R18 completed: windows now let daylight in, closing the
+"partial reading" flagged when R18 first shipped.** That entry noted only
+lamps lit up because no window object was authored yet; `I`/`window` exists
+now, so the missing half is built. `LightingState` gained `dayness` (the
+0-1 value `isNight` was already being thresholded from) and `renderRoom` now
+takes the whole `LightingState` instead of a bare `isNight` boolean, so the
+two sources cross-fade through dawn and dusk — lamps rising as daylight falls
+— rather than both jump-cutting at the 0.5 threshold. `dayNight.ts` remains
+the only wall-clock reader; `renderRoom` is handed lighting as an argument
+specifically so it can't develop its own opinion about what time it is.
+
+Spill direction is derived from the grid, not assumed. Windows sit on the
+floor tile against a wall (objects.yaml), so the light pool is pushed one
+tile away from whichever side the wall is actually on — every window authored
+today happens to be under a top wall, but a window on a side wall is equally
+authorable and would otherwise light the wrong side. There's a test asserting
+no authored window is free-standing, so if that ever changes the fallback
+gets looked at deliberately instead of silently doing the wrong thing.
+
+Glows are clipped to the floor tiles they can reach. This was found by
+looking at the real thing rather than by reasoning: the first version lit the
+black void outside the house, which reads exactly like daylight leaking
+through the walls. Clipping to the room's bounding box wasn't enough either —
+walls render as a thin strip with the rest of the tile left as background
+(see `drawWallTile`), so a box clip still lit the wall tiles and looked like
+the same leak. Clipping to floor-ish tiles within the glow's bounding box
+fixes it, costs ~50 `rect()` calls per source, and handles rooms whose
+outline isn't rectangular (the kitchen's stepped corner) for free.
+
+Verified in the built app under a frozen device clock (`vite preview` +
+Playwright, per the convention above), at 12:00 and 02:00, with zero console
+errors: daylight pools at both bedroom windows during the day and is absent
+at night; the living-room lamp is lit at night and dark during the day. The
+clip was confirmed by sampling canvas pixels rather than by eye — brightness
+is flat at the ambient tint right up to the room boundary and only rises
+inside it. Screenshotting the bedrooms needed a temporary `SPAWN_ROOM` change
+(steering the avatar there through drag-input was unreliable); reverted
+before the final build, same catch-and-release pattern as the debug hooks in
+earlier entries.

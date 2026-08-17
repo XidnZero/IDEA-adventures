@@ -334,7 +334,7 @@ function frame(now: number): void {
         ctx,
         room,
         (tx, ty) => getTapResponseOffsetPx(tapResponse, room.id, tx, ty, now),
-        lighting.isNight,
+        lighting,
       );
       ctx.restore();
     }

@@ -10,10 +10,6 @@ export interface FakeCtx {
   ctx: CanvasRenderingContext2D;
 }
 
-const GRADIENT = {
-  addColorStop() {},
-};
-
 export function createFakeCtx(): FakeCtx {
   const calls: Array<{ method: string; args: unknown[] }> = [];
   const props: Record<string, unknown> = {};
@@ -24,7 +20,16 @@ export function createFakeCtx(): FakeCtx {
       if (prop in props) return props[prop];
       return (...args: unknown[]) => {
         calls.push({ method: prop, args });
-        if (prop === 'createRadialGradient' || prop === 'createLinearGradient') return GRADIENT;
+        if (prop === 'createRadialGradient' || prop === 'createLinearGradient') {
+          // Gradients record their stops too — the alpha a light source fades
+          // to is the thing worth asserting about day/night rendering, and it
+          // only ever appears in an addColorStop argument.
+          return {
+            addColorStop: (offset: number, color: string) => {
+              calls.push({ method: 'addColorStop', args: [offset, color] });
+            },
+          };
+        }
         return undefined;
       };
     },
