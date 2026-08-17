@@ -4,14 +4,16 @@ import { AVATAR_PROFILES, createAvatar, tileCenterPx } from './avatar/avatar';
 import { createDragState, stepDragSteer } from './movement/dragSteer';
 import { startAutoWalk, isAutoWalkDone, stepAutoWalk, type AutoWalkState } from './movement/autoWalk';
 import { findPath } from './movement/bfsPath';
-import { updateAvatarRoomId } from './movement/shared';
+import { advanceWalkPhase, updateAvatarRoomId } from './movement/shared';
 import { createCamera, updateCamera, type CameraState } from './engine/camera';
 import { findRoomAtWorldTile, getWorldBoundsPx, roomTileToWorldTile } from './world/worldGrid';
 import { renderRoom } from './render/renderRoom';
 import { renderAvatar } from './render/renderAvatar';
+import type { Pose } from './avatar/sprite';
 import { renderNeedBubble, hitTestNeedBubble } from './render/renderNeedBubble';
 import { hitTestProfileSwitcher, renderProfileSwitcher } from './ui/profileSwitcher';
 import { createTapResponseState, getTapResponseOffsetPx, triggerTapResponse } from './interaction/tapResponse';
+import { addSparkle, createSparkleState, renderSparkles } from './interaction/sparkle';
 import { createNeedState, advanceNeedState, resolveNeed, type AvatarNeedState } from './needs/needState';
 import { findNeedTarget } from './needs/needTargets';
 import { SPAWN_ROOM, TILE_PX } from './engine/config';
@@ -57,10 +59,19 @@ let activeIndex = 0;
 
 const drag = createDragState();
 const tapResponse = createTapResponseState();
+const sparkles = createSparkleState();
+// The mini-game draws in screen space with no camera transform (R17), so its
+// bursts can't share the world-space list above — the coordinates mean
+// different things.
+const miniGameSparkles = createSparkleState();
 
 let sessionMs = 0; // foreground play-time clock only (R13/R19) — never Date.now().
 const needStates: AvatarNeedState[] = avatars.map(() => createNeedState(sessionMs));
 const autoWalkStates: Array<AutoWalkState | null> = avatars.map(() => null);
+// Recomputed each frame from actual movement, then consumed by the render
+// pass below — both movement systems feed it, so it can't disagree with
+// whichever one is driving.
+const poses: Pose[] = avatars.map(() => 'idle');
 
 // R17 mini-game shell: null = world is showing; otherwise the toybox-sort
 // overlay owns all rendering and pointer input until its exit icon is tapped.
@@ -154,6 +165,10 @@ canvas.addEventListener('pointerdown', (e) => {
       return;
     }
     canvas.setPointerCapture(e.pointerId);
+    // R8 applies inside the overlay too: a tap that lands on no shape would
+    // otherwise do nothing at all. Only the exit glyph above is exempt, since
+    // closing the overlay is already an unmistakable response.
+    addSparkle(miniGameSparkles, screenX, screenY, performance.now());
     handleToyboxPointerDown(miniGame, screenX, screenY, rect.width, rect.height);
     return;
   }
@@ -168,6 +183,14 @@ canvas.addEventListener('pointerdown', (e) => {
   const p = pointerToWorldPx(e.clientX, e.clientY);
   const active = avatars[activeIndex];
   const now = performance.now();
+
+  // R8 "no dead taps", unconditionally: every tap that reaches the world
+  // layer sparkles where it landed, whether or not it also does something
+  // else. Placed before all the branches below rather than in each of their
+  // else-paths so there is no way to add a new branch that forgets it — a
+  // tap on a wall, on the black void between rooms, or on a tile the avatar
+  // can't reach otherwise produced nothing visible at all.
+  addSparkle(sparkles, p.x, p.y, now);
 
   // Need-bubble tap (R9 auto-walk trigger): only the active avatar's bubble
   // is ever shown, so it's always exactly what's tappable — no dead taps.
@@ -280,7 +303,13 @@ function frame(now: number): void {
     // field in sync with wherever the avatar's world position lands.
     updateAvatarRoomId(world, avatar);
 
-    const isMoving = Math.hypot(avatar.x - prevX, avatar.y - prevY) > 0.01;
+    const movedPx = Math.hypot(avatar.x - prevX, avatar.y - prevY);
+    const isMoving = movedPx > 0.01;
+    // R5: pose follows whether the avatar actually moved this frame, not
+    // whether a drag is held — an auto-walking avatar (R9, need-bubble
+    // triggered) is walking just as much, and used to render as idle.
+    poses[i] = isMoving ? 'walk' : 'idle';
+    advanceWalkPhase(avatar, movedPx);
     advanceNeedState(needStates[i], sessionMs, dt, isMoving);
 
     const walk = autoWalkStates[i];
@@ -306,6 +335,7 @@ function frame(now: number): void {
     // profile switcher are all hidden while it's open — it owns the screen.
     updateToyboxSort(miniGame, now);
     renderToyboxSort(ctx, miniGame, rect.width, rect.height, now);
+    renderSparkles(ctx, miniGameSparkles, now); // screen space — no camera transform here
   } else {
     ctx.save();
     ctx.fillStyle = '#000';
@@ -340,14 +370,16 @@ function frame(now: number): void {
     }
 
     for (let i = 0; i < avatars.length; i++) {
-      const avatar = avatars[i];
-      const pose = i === activeIndex && drag.active ? 'walk' : 'idle';
-      renderAvatar(ctx, avatar, pose);
+      renderAvatar(ctx, avatars[i], poses[i]);
     }
     const activeNeed = needStates[activeIndex].active;
     if (activeNeed) {
       renderNeedBubble(ctx, active, activeNeed, now);
     }
+
+    // R8: drawn last inside the camera transform, so a burst sits on top of
+    // whatever was tapped and stays pinned to that world spot.
+    renderSparkles(ctx, sparkles, now);
     ctx.restore();
 
     // R18: flat ambient screen-space tint, drawn after the camera transform

@@ -12,15 +12,71 @@ const FACING_OFFSET: Record<Direction, [number, number]> = {
 
 export function renderAvatar(ctx: CanvasRenderingContext2D, avatar: Avatar, pose: Pose): void {
   const r = AVATAR_RADIUS_TILES * TILE_PX;
-  drawLayeredAvatar(ctx, avatar, pose, avatar.facing, avatar.x, avatar.y, r);
+  const [ox, oy] = FACING_OFFSET[avatar.facing];
+
+  // R5's walk pose only ever selected an asset path, so with no real art the
+  // avatar slid around as a static puck. The stride below is the placeholder
+  // equivalent of a walk animation, and applies *only* while the body layer
+  // has no real asset: a real walk sprite animates itself, and bobbing it
+  // too would fight its own cycle. Art still drops in with zero code change.
+  const usingPlaceholderBody = requestLayerAsset(avatar.id, 'body', pose, avatar.facing) === null;
+  const walking = pose === 'walk' && usingPlaceholderBody;
+  const stride = walking ? Math.sin(avatar.walkPhase) : 0;
+  // Lifts on each step — abs() so both halves of the stride bob upward
+  // rather than sinking below the floor on the back-swing.
+  const bob = walking ? -Math.abs(Math.sin(avatar.walkPhase)) * r * 0.16 : 0;
+  const cy = avatar.y + bob;
+
+  if (usingPlaceholderBody) {
+    drawFeet(ctx, avatar.x, cy, r, ox, oy, stride);
+  }
+  drawLayeredAvatar(ctx, avatar, pose, avatar.facing, avatar.x, cy, r);
 
   // Facing dot stands in for R5's directional walk/idle poses where no real
   // asset covers a given layer+pose+direction combination yet.
-  const [ox, oy] = FACING_OFFSET[avatar.facing];
   ctx.beginPath();
-  ctx.arc(avatar.x + ox * r * 0.5, avatar.y + oy * r * 0.5, r * 0.22, 0, Math.PI * 2);
+  ctx.arc(avatar.x + ox * r * 0.5, cy + oy * r * 0.5, r * 0.22, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   ctx.fill();
+}
+
+/**
+ * Two feet peeking out from under the body, swinging in antiphase along the
+ * facing axis and offset perpendicular to it, so the stride reads correctly
+ * in all four directions from one piece of geometry. Drawn before the body
+ * layers so they tuck underneath it.
+ */
+function drawFeet(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  ox: number,
+  oy: number,
+  stride: number,
+): void {
+  // The swing is tuned against the body's own radius, and both bounds matter.
+  // Too short and the whole stride hides under the body — the first version
+  // topped out at 0.95r and was completely invisible on screen. Too long and
+  // the forward foot separates into a floating dot. At 1.15r the foot's inner
+  // edge still overlaps the body while ~0.45r of it protrudes. At rest both
+  // tuck fully underneath, so a standing avatar shows no feet at all and the
+  // appearance of a foot *is* the walk cue.
+  const perpX = -oy;
+  const perpY = ox;
+  ctx.fillStyle = 'rgba(62,48,38,0.85)';
+  for (const side of [-1, 1]) {
+    const reach = r * 0.55 + stride * side * r * 0.6;
+    ctx.beginPath();
+    ctx.arc(
+      cx + perpX * side * r * 0.42 + ox * reach,
+      cy + perpY * side * r * 0.42 + oy * reach,
+      r * 0.3,
+      0,
+      Math.PI * 2,
+    );
+    ctx.fill();
+  }
 }
 
 /**

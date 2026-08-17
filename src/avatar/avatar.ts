@@ -10,6 +10,11 @@ export interface Avatar {
   x: number; // world px, in the composited house-wide coordinate space (R1)
   y: number; // world px, in the composited house-wide coordinate space (R1)
   facing: Direction;
+  // Stride position for the placeholder walk cycle, in radians. Advanced by
+  // *distance travelled*, never by elapsed time — so the gait matches the
+  // avatar's actual speed, freezes exactly when they stop, and introduces no
+  // new clock into a codebase where clock ownership is a hard rule (R19).
+  walkPhase: number;
 }
 
 export interface AvatarProfile {
@@ -25,7 +30,7 @@ export const AVATAR_PROFILES: AvatarProfile[] = [
 ];
 
 export function createAvatar(profile: AvatarProfile, roomId: string, x: number, y: number): Avatar {
-  return { id: profile.id, palette: profile.palette, roomId, x, y, facing: 'down' };
+  return { id: profile.id, palette: profile.palette, roomId, x, y, facing: 'down', walkPhase: 0 };
 }
 
 export function tileCenterPx(tx: number, ty: number): { x: number; y: number } {

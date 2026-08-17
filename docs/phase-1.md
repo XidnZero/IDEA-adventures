@@ -55,6 +55,6 @@ School/playground stages, GUI world builder, more mini-games, tiredness need, av
 clothing customisation, kid-facing world editing. Do not scaffold these.
 
 ## Open items NOT yet resolved (do not silently decide these — flag and ask)
-- Audio approach (recorded voices vs. SFX only).
-- Engine choice beyond "plain canvas held up at spike scale" — revisit once multi-room +
-  animated sprite sheets + mini-games are live; canvas may hit a ceiling.
+Moved to `docs/open-questions.md`, together with the ones raised since, so
+there's one list rather than three. Audio and the engine choice are items 1
+and 2 there.

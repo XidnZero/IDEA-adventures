@@ -871,3 +871,112 @@ inside it. Screenshotting the bedrooms needed a temporary `SPAWN_ROOM` change
 (steering the avatar there through drag-input was unreliable); reverted
 before the final build, same catch-and-release pattern as the debug hooks in
 earlier entries.
+
+**2026-08-17 — Open decisions consolidated into `docs/open-questions.md`.**
+They had accumulated in three places — phase-1.md's "open items" section,
+scattered "flagging this in case it's wrong" notes throughout this log, and
+whatever the last session happened to mention in chat — which meant the only
+reliable way to find them was to reread everything. The new file lists each
+one with what's undecided, why it matters, the stand-in that currently ships,
+and a recommendation where there is one. `CLAUDE.md` points at it as a fourth
+source of truth; phase-1.md's section now redirects there. This log stays the
+append-only narrative of calls actually *made*. When an open question is
+answered: implement it, log the reasoning here, delete it from there.
+
+Ten items carried over, including several stale ones deliberately dropped
+(the `S` shower in `living_room` and the `bedroom_a`/`bedroom_parents` door
+notes refer to layouts superseded by the 9-room plan and no longer describe
+anything real).
+
+**2026-08-17 — R8's "zero dead taps" is now actually true.**
+`src/interaction/sparkle.ts` draws a short code-drawn burst at the tapped
+point. Object taps already bounced and floor taps already started a walk, but
+a tap on a wall, on the black void between rooms, or on a tile the avatar
+couldn't reach produced nothing visible whatsoever — so the acceptance
+criterion ("dead-tap rate is zero", not low) was not met.
+
+The call sits *above* every world-layer branch in `main.ts`'s pointerdown
+handler rather than in each of their else-paths, so a future branch can't be
+added that forgets it; there's a test asserting that position, and another
+asserting the module never reads room/tile state at all. That's what makes
+the guarantee hold without maintaining a list of cases. The screen-space
+branches that run before it (profile switcher, gate, mini-game exit) each
+already produce an unmistakable response of their own.
+
+The mini-game gets its own burst list. R17 lets a mini-game declare its own
+input model, but "no dead taps" isn't scoped to the world layer, and a tap
+landing on no shape did nothing. It can't share the world-space list because
+the overlay renders in screen space with no camera transform — the same
+coordinates would land somewhere else entirely.
+
+Two things only the live app showed, both fixed:
+
+1. **Too faint at first.** The original burst was ~48px across; it now grows
+   to roughly the ~120px minimum touch target from CLAUDE.md, so the response
+   is at the same scale as the gesture that caused it instead of being a
+   detail a toddler has to hunt for.
+2. **Nearly invisible on cream.** Every shape is now drawn as a dark halo
+   first with the bright shape on top. A single-tone burst can't work here:
+   the room floor (`#f4ead9`) and the mini-game backdrop are both within a
+   few percent of the highlight colour, while a dark-only burst would vanish
+   against walls and the void. Two tones read on any background without the
+   module needing to know what's underneath — which also keeps it free of the
+   world-state coupling the test forbids.
+
+Deliberately silent (audio is open question 1), and deliberately identical
+whether the tap did something or nothing — a burst that differed on a "miss"
+would be a fail signal, which R14 forbids.
+
+Verified in the built app by sampling canvas pixels before/during/after a tap
+(brightness moves and returns to baseline) and by cropped screenshots on all
+three surfaces: dark wall, cream floor, and the mini-game overlay.
+
+**2026-08-17 — R5's walk pose is now an actual animation, and pose follows
+real movement rather than the drag flag.** Two separate gaps closed.
+
+First, `main.ts` computed `pose = i === activeIndex && drag.active ? 'walk' :
+'idle'`. That is false during a need-bubble auto-walk (R9), so an avatar
+crossing the house to reach a toilet rendered as standing still the whole
+way. Pose is now derived per-avatar from the distance actually moved that
+frame — the same measurement `advanceNeedState` already consumes — so both
+movement systems feed it and it cannot disagree with whichever one is
+driving.
+
+Second, `pose` only ever selected an asset path. With no avatar art authored
+(none is), the placeholder was a static circle either way, so the avatar slid
+around like a puck. `renderAvatar` now draws a placeholder stride: two feet
+swinging in antiphase along the facing axis, plus a small upward bob. It's
+built from the facing vector and its perpendicular, so one piece of geometry
+covers all four directions rather than four hand-tuned cases.
+
+`Avatar.walkPhase` is advanced by **distance travelled**, not elapsed time
+(`advanceWalkPhase` in `movement/shared.ts`). The gait then matches whatever
+speed the avatar is going, freezes exactly when they stop, can't drift with
+frame rate — and, importantly for R19, introduces no new clock into a
+codebase where clock ownership is a hard rule. Phase 0 is the neutral point
+of the cycle (no swing, no bob), so a walking avatar at phase 0 renders
+identically to an idle one; that's what keeps the animation from popping when
+movement starts or stops, and there's a test pinning it.
+
+The whole stride is suppressed when the body layer resolves to a real asset:
+a real walk sprite animates itself and bobbing it too would fight its own
+cycle. Art still drops in with zero code change. HUD portraits are unaffected
+— they call `drawLayeredAvatar` directly with a fixed `idle`/`down`, so a
+bobbing portrait was never possible.
+
+Two rounds of tuning, both driven by looking at the built app rather than by
+reasoning, and neither visible in a unit test:
+
+1. **The first version was completely invisible.** Foot reach topped out at
+   0.95r against a body radius of r, so the entire stride happened *underneath
+   the body circle*. Every test passed — the draw calls were all there and
+   correctly different between poses — while nothing whatsoever showed on
+   screen.
+2. **Overcorrecting detached the foot.** At 1.3r the forward foot separated
+   into a floating dot next to the avatar. Settled at 1.15r, where the inner
+   edge still overlaps the body and ~0.45r protrudes.
+
+At rest both feet tuck fully under the body, so a standing avatar shows no
+feet and the *appearance* of a foot is itself the walk cue. Verified across a
+stride in the built app at 3x device scale (at 1x the avatar's ~15px radius
+is too small to judge this by eye), zero console errors.

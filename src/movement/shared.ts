@@ -9,6 +9,21 @@ export function pickFacing(dx: number, dy: number, current: Direction): Directio
   return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
 }
 
+// One full stride per this many pixels travelled. Roughly two steps per tile
+// at TILE_PX 48, which reads as a walk rather than a scurry.
+const PX_PER_STRIDE = TILE_PX;
+
+/**
+ * Advances the placeholder walk cycle by distance moved, shared by both
+ * movement systems. Distance rather than time is deliberate: the gait then
+ * matches whatever speed the avatar is actually going, stops dead when they
+ * stop, and needs no clock of its own (R19 — see avatar.ts).
+ */
+export function advanceWalkPhase(avatar: Avatar, distancePx: number): void {
+  if (distancePx <= 0) return;
+  avatar.walkPhase = (avatar.walkPhase + (distancePx / PX_PER_STRIDE) * Math.PI * 2) % (Math.PI * 2);
+}
+
 /**
  * Keeps `avatar.roomId` in sync with world position. Movement itself no
  * longer needs this (R1's composited house is one continuous walkable grid),

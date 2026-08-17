@@ -58,6 +58,11 @@ This file = prohibitions and standing architecture rules only, ~1 page, always i
 - `docs/phase-1.md` — current scope + acceptance criteria (THE build order)
 - `docs/decisions.md` — architecture decisions log — **append here whenever you make
   a call mid-build.** Uncaptured reasoning is gone next session.
+- `docs/open-questions.md` — decisions that are **not yours to make.** Each one has a
+  deliberate stand-in that ships until it's answered. Do not silently resolve one by
+  picking whatever is convenient mid-build; flag it, or proceed and state the
+  assumption. When one is answered, implement it, log the reasoning in `decisions.md`,
+  and delete the item from that file.
 
 Keep P1/P2 scope out of active context while building Phase 1. Seeing the roadmap causes
 premature scaffolding for features not yet in scope.
