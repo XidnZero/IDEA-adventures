@@ -1,13 +1,20 @@
-import type { Need, ObjectDef, RoomDef, World } from '../world/types';
+import type { Need, RoomDef, World } from '../world/types';
 import { roomTileToWorldTile } from '../world/worldGrid';
+import { findPathToNearest, type PathNode } from '../movement/bfsPath';
 
-/** First walkable tile bordering an object's footprint — where an avatar stands to use it. */
-export function findInteractionTile(
+/**
+ * Every walkable tile bordering an object's footprint — the places an avatar
+ * could stand to use it. All of them, not just the first: a fixture's nearest
+ * approach depends on where the avatar is coming from, and picking one tile
+ * up front can also strand a perfectly reachable fixture behind a blocked
+ * approach.
+ */
+export function findInteractionTiles(
   room: RoomDef,
   anchorX: number,
   anchorY: number,
   footprint: [number, number],
-): { tx: number; ty: number } | null {
+): Array<{ tx: number; ty: number }> {
   const [w, h] = footprint;
   const candidates: Array<[number, number]> = [];
   for (let x = anchorX - 1; x <= anchorX + w; x++) {
@@ -18,38 +25,52 @@ export function findInteractionTile(
     candidates.push([anchorX - 1, y]);
     candidates.push([anchorX + w, y]);
   }
+
+  const out: Array<{ tx: number; ty: number }> = [];
   for (const [tx, ty] of candidates) {
     if (ty < 0 || ty >= room.height || tx < 0 || tx >= room.width) continue;
-    if (room.walkable[ty][tx]) return { tx, ty };
+    if (room.walkable[ty][tx]) out.push({ tx, ty });
   }
-  return null;
+  return out;
 }
 
 // World-tile coordinates (R1's composited house), consumed directly by
-// bfsPath.ts's world-grid pathing.
+// bfsPath.ts's world-grid pathing. The path is returned alongside the
+// destination because finding the destination already required computing it —
+// re-running BFS in the caller would be doing the same work twice.
 export interface NeedTarget {
   tx: number;
   ty: number;
+  path: PathNode[];
 }
 
-/** Finds where to walk to resolve a need. R9: the kitchen toilet is the default washroom target. */
-export function findNeedTarget(world: World, need: Need): NeedTarget | null {
-  const matches: Array<{ roomId: string; ax: number; ay: number; def: ObjectDef }> = [];
+/**
+ * Where to walk to resolve a need (R9): the *nearest reachable* fixture of
+ * the right kind, measured by real path length from `from`.
+ *
+ * Deliberately no preferred-room constant. The previous version named a room
+ * id, which had already survived one floor-plan rename only by being
+ * blind-patched, and by then meant "always cross the entire house to
+ * `bath_wc_2`" even when standing next to the other toilet. Nothing here
+ * knows a room name now, so a floor-plan change can't invalidate it.
+ */
+export function findNeedTarget(world: World, need: Need, from: PathNode): NeedTarget | null {
+  const goals: PathNode[] = [];
   for (const room of Object.values(world.rooms)) {
     for (let y = 0; y < room.height; y++) {
       for (let x = 0; x < room.width; x++) {
         const tile = room.grid[y][x];
-        if (tile.kind === 'object' && tile.isAnchor && tile.def.need === need) {
-          matches.push({ roomId: room.id, ax: x, ay: y, def: tile.def });
+        if (tile.kind !== 'object' || !tile.isAnchor || tile.def.need !== need) continue;
+        for (const local of findInteractionTiles(room, x, y, tile.def.footprint)) {
+          goals.push(roomTileToWorldTile(room, local.tx, local.ty));
         }
       }
     }
   }
-  if (matches.length === 0) return null;
 
-  const preferred = matches.find((m) => m.roomId === 'bath_wc_2') ?? matches[0];
-  const room = world.rooms[preferred.roomId];
-  const tile = findInteractionTile(room, preferred.ax, preferred.ay, preferred.def.footprint);
-  if (!tile) return null;
-  return roomTileToWorldTile(room, tile.tx, tile.ty);
+  const path = findPathToNearest(world, from, goals);
+  if (!path) return null;
+
+  const destination = path[path.length - 1];
+  return { tx: destination.tx, ty: destination.ty, path };
 }

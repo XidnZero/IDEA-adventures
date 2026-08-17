@@ -3,7 +3,7 @@ import { loadWorld } from '../src/world/loadWorld';
 import type { World } from '../src/world/types';
 import { findRoomAtWorldTile, isWalkableWorldTile, roomTileToWorldTile } from '../src/world/worldGrid';
 import { findPath } from '../src/movement/bfsPath';
-import { findNeedTarget } from '../src/needs/needTargets';
+import { findInteractionTiles, findNeedTarget } from '../src/needs/needTargets';
 import { SPAWN_ROOM } from '../src/engine/config';
 
 /**
@@ -207,17 +207,18 @@ test('every need has a fixture that auto-walk can actually route to', () => {
   const from = roomTileToWorldTile(spawnRoom, spawnRoom.spawn[0], spawnRoom.spawn[1]);
 
   for (const need of ['hunger', 'washroom', 'hygiene'] as const) {
-    const target = findNeedTarget(world, need);
+    const target = findNeedTarget(world, need, from);
     expect(target, `no fixture found for ${need}`).not.toBeNull();
-    const path = findPath(world, from, target!);
-    expect(path, `no path to the ${need} fixture`).not.toBeNull();
+    const path = target!.path;
     // R9: the route has to cross doors, not teleport — it's a real BFS over
     // the composited grid, so every step must be a walkable neighbour.
-    for (let i = 1; i < path!.length; i++) {
-      const step = Math.abs(path![i].tx - path![i - 1].tx) + Math.abs(path![i].ty - path![i - 1].ty);
+    for (let i = 1; i < path.length; i++) {
+      const step = Math.abs(path[i].tx - path[i - 1].tx) + Math.abs(path[i].ty - path[i - 1].ty);
       expect(step).toBe(1);
-      expect(isWalkableWorldTile(world, path![i].tx, path![i].ty)).toBe(true);
+      expect(isWalkableWorldTile(world, path[i].tx, path[i].ty)).toBe(true);
     }
+    // The path really does end at the fixture it chose.
+    expect(path[path.length - 1]).toEqual({ tx: target!.tx, ty: target!.ty });
   }
 });
 
@@ -225,13 +226,62 @@ test('auto-walk routes between rooms, not just within the spawn room', () => {
   // R9's acceptance criterion is specifically "routes through doors around
   // furniture", so pin at least one genuinely cross-room route.
   const from = roomTileToWorldTile(world.rooms.living, 12, 12);
-  const washroom = findNeedTarget(world, 'washroom')!;
-  const path = findPath(world, from, washroom)!;
-  expect(path).not.toBeNull();
+  const washroom = findNeedTarget(world, 'washroom', from)!;
+  expect(washroom).not.toBeNull();
 
   const roomsVisited = new Set(
-    path.map((n) => findRoomAtWorldTile(world, n.tx, n.ty)?.room.id ?? '?'),
+    washroom.path.map((n) => findRoomAtWorldTile(world, n.tx, n.ty)?.room.id ?? '?'),
   );
   expect(roomsVisited.size).toBeGreaterThan(1);
   expect(roomsVisited.has('living')).toBe(true);
+});
+
+test('auto-walk heads for the nearest fixture, not a hardcoded room', () => {
+  // Two toilets exist, in bath_wc_1 and bath_wc_2, at opposite ends of the
+  // house. Standing in one bathroom must not send the avatar to the other.
+  const toiletRooms = new Set<string>();
+  for (const room of Object.values(world.rooms)) {
+    for (let y = 0; y < room.height; y++) {
+      for (let x = 0; x < room.width; x++) {
+        const tile = room.grid[y][x];
+        if (tile.kind === 'object' && tile.isAnchor && tile.def.name === 'toilet') {
+          toiletRooms.add(room.id);
+        }
+      }
+    }
+  }
+  expect(toiletRooms.size, 'this test needs more than one toilet to be meaningful').toBeGreaterThan(
+    1,
+  );
+
+  for (const roomId of toiletRooms) {
+    const room = world.rooms[roomId];
+    const from = roomTileToWorldTile(room, room.spawn[0], room.spawn[1]);
+    const target = findNeedTarget(world, 'washroom', from)!;
+    expect(target, `no washroom target from ${roomId}`).not.toBeNull();
+    const chosen = findRoomAtWorldTile(world, target.tx, target.ty)!.room.id;
+    expect(chosen, `standing in ${roomId} but routed to ${chosen}`).toBe(roomId);
+  }
+});
+
+test('the chosen fixture is genuinely the closest one available', () => {
+  // Independent of the implementation: brute-force every fixture's shortest
+  // path and confirm nothing beats what findNeedTarget picked.
+  const from = roomTileToWorldTile(world.rooms.main_bedroom, 10, 3);
+  const target = findNeedTarget(world, 'washroom', from)!;
+
+  let best = Infinity;
+  for (const room of Object.values(world.rooms)) {
+    for (let y = 0; y < room.height; y++) {
+      for (let x = 0; x < room.width; x++) {
+        const tile = room.grid[y][x];
+        if (tile.kind !== 'object' || !tile.isAnchor || tile.def.need !== 'washroom') continue;
+        for (const local of findInteractionTiles(room, x, y, tile.def.footprint)) {
+          const path = findPath(world, from, roomTileToWorldTile(room, local.tx, local.ty));
+          if (path) best = Math.min(best, path.length);
+        }
+      }
+    }
+  }
+  expect(target.path.length).toBe(best);
 });

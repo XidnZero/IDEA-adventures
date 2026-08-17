@@ -980,3 +980,45 @@ At rest both feet tuck fully under the body, so a standing avatar shows no
 feet and the *appearance* of a foot is itself the walk cue. Verified across a
 stride in the built app at 3x device scale (at 1x the avatar's ~15px radius
 is too small to judge this by eye), zero console errors.
+
+**2026-08-17 — Need auto-walk now heads for the nearest fixture; the
+hardcoded preferred-room id is gone.** `findNeedTarget` picked
+`matches.find((m) => m.roomId === 'bath_wc_2') ?? matches[0]`. That string is
+a rename-patch of an older `'toilet_kitchen'` default (see the entry above
+about room renames breaking plain-string ids in `src/`) — it was blind-updated
+to a room that still existed and never re-examined as a *choice*. Its actual
+effect in the current house: two toilets exist, in `bath_wc_1` and
+`bath_wc_2`, at opposite ends of the graph, and the avatar always walked to
+`bath_wc_2`. Standing inside `bath_wc_1`, tapping the need bubble sent them
+out through `main_bedroom`, `main_hall`, `living` and `kitchen` to reach the
+*other* toilet.
+
+Replaced with real nearest-fixture selection. `bfsPath.ts` gained
+`findPathToNearest(world, from, goals)`; because BFS expands in order of
+distance, the first goal it reaches is by definition the nearest, so this
+costs one search rather than one per candidate. `findPath` is now a
+one-goal call into it, so there's a single search implementation.
+
+Three knock-on improvements worth noting:
+
+- **No room name appears in the module at all**, so a future floor-plan
+  change cannot silently invalidate the choice the way the last one did.
+- `findInteractionTile` became `findInteractionTiles` and returns *every*
+  walkable tile bordering a fixture rather than the first. Beyond nearest
+  selection, the old version could strand a perfectly reachable fixture
+  whose first candidate approach tile happened to be blocked.
+- `findNeedTarget` returns the path alongside the destination. Choosing the
+  target already required computing it, and `main.ts` was then running a
+  second identical BFS to route there.
+
+Verified live, since the tap → auto-walk wiring in `main.ts` is the one part
+of this no unit test reaches: temporarily shortened `NEED_MIN/MAX_INTERVAL_MS`
+to 2-3 seconds, built, confirmed in the browser that the bubble appears, that
+tapping it starts a real cross-room walk toward the kitchen fridge, and that
+there are zero console errors — then reverted the constants (same
+catch-and-release pattern as the `SPAWN_ROOM` change in the R18 entry).
+
+Two new tests cover the behaviour itself: standing in either toilet's own
+room must route to *that* room, and — implementation-independently — the
+chosen path must be no longer than the best path to any fixture found by
+brute force. Both fail against the old hardcoded version.

@@ -14,11 +14,30 @@ export interface PathNode {
  * version this replaced (see docs/decisions.md).
  */
 export function findPath(world: World, from: PathNode, to: PathNode): PathNode[] | null {
-  const key = (n: PathNode) => `${n.tx},${n.ty}`;
+  return findPathToNearest(world, from, [to]);
+}
 
-  if (from.tx === to.tx && from.ty === to.ty) {
-    return [from];
-  }
+/**
+ * Path to whichever of `goals` is closest on foot. Because BFS expands in
+ * order of distance, the first goal it reaches *is* the nearest one — so this
+ * costs one search, not one per goal.
+ *
+ * This is what picks which fixture a need-bubble auto-walk heads for. Doing
+ * it by real path length rather than by naming a preferred room means the
+ * choice can't silently rot when the floor plan changes: it used to hardcode
+ * a room id, which had already been blind-patched through one rename and by
+ * then sent the avatar across the whole house past a nearer toilet.
+ */
+export function findPathToNearest(
+  world: World,
+  from: PathNode,
+  goals: PathNode[],
+): PathNode[] | null {
+  const key = (n: PathNode) => `${n.tx},${n.ty}`;
+  if (goals.length === 0) return null;
+
+  const goalKeys = new Set(goals.map(key));
+  if (goalKeys.has(key(from))) return [from];
 
   const visited = new Set<string>([key(from)]);
   const queue: PathNode[] = [from];
@@ -31,7 +50,7 @@ export function findPath(world: World, from: PathNode, to: PathNode): PathNode[]
       if (visited.has(k)) continue;
       visited.add(k);
       cameFrom.set(k, current);
-      if (next.tx === to.tx && next.ty === to.ty) {
+      if (goalKeys.has(k)) {
         return reconstruct(cameFrom, next, key);
       }
       queue.push(next);

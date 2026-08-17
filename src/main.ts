@@ -3,7 +3,6 @@ import type { Avatar } from './avatar/avatar';
 import { AVATAR_PROFILES, createAvatar, tileCenterPx } from './avatar/avatar';
 import { createDragState, stepDragSteer } from './movement/dragSteer';
 import { startAutoWalk, isAutoWalkDone, stepAutoWalk, type AutoWalkState } from './movement/autoWalk';
-import { findPath } from './movement/bfsPath';
 import { advanceWalkPhase, updateAvatarRoomId } from './movement/shared';
 import { createCamera, updateCamera, type CameraState } from './engine/camera';
 import { findRoomAtWorldTile, getWorldBoundsPx, roomTileToWorldTile } from './world/worldGrid';
@@ -196,14 +195,14 @@ canvas.addEventListener('pointerdown', (e) => {
   // is ever shown, so it's always exactly what's tappable — no dead taps.
   const activeNeed = needStates[activeIndex].active;
   if (hitTestNeedBubble(active, activeNeed, p.x, p.y, now) && activeNeed) {
-    const target = findNeedTarget(world, activeNeed);
+    // Heads for the nearest reachable fixture of the right kind, and hands
+    // back the path it already had to compute to work that out — so this is
+    // one BFS, not one to choose plus another to route.
+    const from = { tx: Math.floor(active.x / TILE_PX), ty: Math.floor(active.y / TILE_PX) };
+    const target = findNeedTarget(world, activeNeed, from);
     if (target) {
-      const from = { tx: Math.floor(active.x / TILE_PX), ty: Math.floor(active.y / TILE_PX) };
-      const path = findPath(world, from, target);
-      if (path) {
-        autoWalkStates[activeIndex] = startAutoWalk(path);
-        drag.active = false;
-      }
+      autoWalkStates[activeIndex] = startAutoWalk(target.path);
+      drag.active = false;
     }
     return;
   }
