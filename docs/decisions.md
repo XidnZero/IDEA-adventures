@@ -753,3 +753,81 @@ unverified) — confirmed the rotated sofa fills its green-outlined footprint
 box exactly, no stretching, and the pillow layout turns 90° as expected.
 
 **2026-08-16 — Follow-up sizing pass on the newly-added sprites: `sofa` combines `flip: y` with `rotate: 90`, `tv` rotated 90 into a tall footprint `[1, 5]`, `playpen` enlarged to `[6, 4]`.** No code changes — `flip`+`rotate` composing correctly on the same object (sofa) is the first real use of both together, confirming the "rotate applied after flip" order from the entry above holds up outside the isolated test case. Verified with the same three checks as every layout change in this doc: the room-file validator (overlap/door-pairing/BFS) reports the larger footprints fit without collision, `tsc -b`/`vite build` are clean, and a live Playwright pass shows zero console errors.
+
+**2026-08-17 — Phase-1 acceptance criteria are now executable tests (Vitest),
+replacing throwaway verification scripts.** Every prior R-item was verified
+with Playwright/node scripts written into a session scratchpad and deleted
+afterwards, so each layout or care-loop change started from zero verification
+— and phase-1.md asks explicitly for one of these to be a *test* ("Verify
+with a test that need-timer and lighting-timer are structurally separate
+variables", R19). The runner is Vitest rather than `node:test` because the
+world is loaded through Vite's `?raw` / `import.meta.glob` (`loadWorld.ts`);
+sharing `vite.config.ts` means the tests exercise the real loader against the
+real `.room` files instead of a parallel fixture that could drift from what
+ships. `npm test` runs them; they finish in well under a second.
+
+Two of the criteria are claims about what the source is *allowed to contain*
+rather than about behaviour, so `tests/helpers/sourceScan.ts` reads every
+module under `src/` as text. It strips comments before matching: this
+codebase documents these rules constantly in prose ("never Date.now()",
+"zero-distress"), so a raw text scan would fail on its own documentation. The
+rules are about code, so the scan is about code.
+
+- `clockSeparation.test.ts` (R19) — asserts `engine/dayNight.ts` is the only
+  module reading a wall clock (`main.ts` is exempted for its rAF/animation
+  timestamps, with a separate assertion that `needState.ts` reads no clock at
+  all); that neither clock module names the other; and that in `main.ts` the
+  right-hand side of every `sessionMs` assignment mentions no date/lighting
+  and every `lighting` assignment mentions no session time. Behaviourally:
+  sweeping the device clock across 24 hours cannot move need state, two hours
+  of session time cannot move the lighting, and `getLightingState` returns
+  the same value for the same argument under wildly different system times.
+- `noFailState.test.ts` (R14) — a forbidden-vocabulary scan (severity,
+  urgency, escalate, distress, accident, score, isCorrect, …), a pin on
+  `AvatarNeedState`'s exact field set so a new cross-cycle counter has to be
+  justified, an eight-hour ignored-need run proving nothing about the need
+  changes, and a 16-hour randomized session across four movement profiles.
+- `houseLayout.test.ts` (R2/R4/R9) — the four checks this project has
+  repeatedly needed: room disjointness, every authored door leading somewhere,
+  BFS reachability, and the derived door graph plus per-room fixture
+  inventory compared against an intended adjacency list held in the test.
+  That last check is the load-bearing one, per the same reasoning recorded in
+  earlier rounds: overlap/pairing/reachability all pass happily on a layout
+  that is internally consistent but connects the wrong rooms together.
+- `artPipeline.test.ts` — the placeholder-and-swap criteria, driven off
+  `world/objects.yaml` itself rather than a hand-listed subset, so a newly
+  authored object is covered the moment it exists. Uses a recording
+  `CanvasRenderingContext2D` proxy and a fake `Image` (a "missing" file fires
+  `onerror`, exactly as a real one does), which is enough because the render
+  modules only ever issue draw calls and never read back.
+
+**2026-08-17 — Fixed `tv` footprint `[1, 5]` -> `[1, 3]`; it was walling
+`main_bedroom` in half.** Found by the new reachability check on its first
+run, which is the whole reason that check exists. In `main_bedroom` the
+window `I` covers local (10,1)-(11,1) and the TV anchored at (11,2) with a
+5-tall footprint covered (11,2)-(11,6), with row 7 the bottom wall — so
+column 11 was solid from wall to wall and the room's entire right side
+(including its lamp and picture frame, both R16 interactables) was
+unreachable from anywhere in the house. Nothing in the previous validation
+round could see this: the door graph was correct, every door paired, and
+per-room BFS between spawn tiles succeeded, because the split is *inside* one
+room and behind furniture. Hence the additional flood-fill check that every
+walkable tile in the house is reachable from spawn, not just every room.
+
+`[1, 3]` is also the correct value on the footprint rule's own terms: the art
+is 680x240, which rotated 90 is 1:2.83, so `[1, 5]` was stretching it — the
+sizing pass that introduced it recorded the aspect in a comment but didn't
+match it.
+
+**2026-08-17 — Flagged, not fixed: the hygiene threshold crowds hunger (and
+therefore the washroom chain) out of normal play.** Surfaced by the
+randomized session test, which initially only ever produced `hygiene`.
+`HYGIENE_ACTIVITY_THRESHOLD_SEC` is 90 while `NEED_MIN_INTERVAL_MS` is 180s,
+and `advanceNeedState` prefers hygiene whenever the threshold is met at the
+moment the pacing timer fires — so any session with more than ~30-50%
+movement yields hygiene every single time. Since `washroom` is *only* ever
+set by the eat-then-later causal chain, a child who actively drags the avatar
+around will essentially never see hunger or the toilet. Left as-is because
+retuning the constants is a design call about how the care loop should feel,
+not a correctness fix; the test now runs four movement profiles (0/15/60/100%)
+so it exercises both branches regardless of how this is eventually resolved.
