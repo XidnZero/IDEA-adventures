@@ -34,6 +34,13 @@ export function findInteractionTiles(
   return out;
 }
 
+/** Where a fixture sits, in the room-local coordinates tapResponse.ts keys on. */
+export interface FixtureRef {
+  roomId: string;
+  tx: number;
+  ty: number;
+}
+
 // World-tile coordinates (R1's composited house), consumed directly by
 // bfsPath.ts's world-grid pathing. The path is returned alongside the
 // destination because finding the destination already required computing it —
@@ -42,6 +49,10 @@ export interface NeedTarget {
   tx: number;
   ty: number;
   path: PathNode[];
+  // The fixture this route leads to. Carried back so the resolution routine
+  // (R15) can respond on the object the child actually used, instead of
+  // re-deriving it from wherever the avatar happens to be standing.
+  fixture: FixtureRef;
 }
 
 /**
@@ -56,13 +67,20 @@ export interface NeedTarget {
  */
 export function findNeedTarget(world: World, need: Need, from: PathNode): NeedTarget | null {
   const goals: PathNode[] = [];
+  const fixtureByGoal = new Map<string, FixtureRef>();
+
   for (const room of Object.values(world.rooms)) {
     for (let y = 0; y < room.height; y++) {
       for (let x = 0; x < room.width; x++) {
         const tile = room.grid[y][x];
         if (tile.kind !== 'object' || !tile.isAnchor || tile.def.need !== need) continue;
         for (const local of findInteractionTiles(room, x, y, tile.def.footprint)) {
-          goals.push(roomTileToWorldTile(room, local.tx, local.ty));
+          const goal = roomTileToWorldTile(room, local.tx, local.ty);
+          goals.push(goal);
+          // First writer wins: two fixtures can in principle share an
+          // approach tile, and either is a correct answer for it.
+          const key = goal.tx + ',' + goal.ty;
+          if (!fixtureByGoal.has(key)) fixtureByGoal.set(key, { roomId: room.id, tx: x, ty: y });
         }
       }
     }
@@ -72,5 +90,6 @@ export function findNeedTarget(world: World, need: Need, from: PathNode): NeedTa
   if (!path) return null;
 
   const destination = path[path.length - 1];
-  return { tx: destination.tx, ty: destination.ty, path };
+  const fixture = fixtureByGoal.get(destination.tx + ',' + destination.ty)!;
+  return { tx: destination.tx, ty: destination.ty, path, fixture };
 }

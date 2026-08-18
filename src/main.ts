@@ -14,7 +14,7 @@ import { hitTestProfileSwitcher, renderProfileSwitcher } from './ui/profileSwitc
 import { createTapResponseState, getTapResponseOffsetPx, triggerTapResponse } from './interaction/tapResponse';
 import { addSparkle, createSparkleState, renderSparkles } from './interaction/sparkle';
 import { createNeedState, advanceNeedState, resolveNeed, type AvatarNeedState } from './needs/needState';
-import { findNeedTarget } from './needs/needTargets';
+import { findNeedTarget, type FixtureRef } from './needs/needTargets';
 import { SPAWN_ROOM, TILE_PX } from './engine/config';
 import {
   createToyboxSort,
@@ -73,6 +73,9 @@ const miniGameSparkles = createSparkleState();
 let sessionMs = 0; // foreground play-time clock only (R13/R19) — never Date.now().
 const needStates: AvatarNeedState[] = avatars.map(() => createNeedState(sessionMs));
 const autoWalkStates: Array<AutoWalkState | null> = avatars.map(() => null);
+// The fixture each in-flight auto-walk is heading for, kept alongside it so
+// the R15 celebration can fire on the object actually used.
+const autoWalkFixtures: Array<FixtureRef | null> = avatars.map(() => null);
 // Recomputed each frame from actual movement, then consumed by the render
 // pass below — both movement systems feed it, so it can't disagree with
 // whichever one is driving.
@@ -93,10 +96,20 @@ let lighting: LightingState = getLightingState();
 let gateHold: { startMs: number; startX: number; startY: number } | null = null;
 let gateOpen = false;
 
-// Light-touch R15: a parent NPC in the room where a need resolves bounces
-// in place. Parents are static (R7 — no pathfinding), so this stands in for
-// "comes over" without literally moving the NPC across the room.
-function celebrateInRoom(roomId: string, now: number): void {
+// R15 resolution routine. Parents are static (R7 — no pathfinding), so a
+// parent in the room bounces in place rather than literally walking over.
+//
+// The fixture the child just used *always* bounces too, and that part is not
+// decoration: parents are only authored in `living` and `kitchen`, while
+// washroom and hygiene both resolve in a bathroom — so the parent-only
+// version acknowledged exactly one of the three needs and the other two
+// resolved in complete silence. Bouncing the fixture guarantees an on-screen
+// response wherever the need happens to be met, using the same primitive
+// R16 interactables already use rather than inventing a second one. See
+// docs/open-questions.md on whether "parent comes over" wants more than this.
+function celebrateResolution(fixture: FixtureRef, roomId: string, now: number): void {
+  triggerTapResponse(tapResponse, fixture.roomId, fixture.tx, fixture.ty, now);
+
   const room = world.rooms[roomId];
   for (let y = 0; y < room.height; y++) {
     for (let x = 0; x < room.width; x++) {
@@ -208,6 +221,7 @@ canvas.addEventListener('pointerdown', (e) => {
     const target = findNeedTarget(world, activeNeed, from);
     if (target) {
       autoWalkStates[activeIndex] = startAutoWalk(target.path);
+      autoWalkFixtures[activeIndex] = target.fixture;
       drag.active = false;
     }
     return;
@@ -230,7 +244,10 @@ canvas.addEventListener('pointerdown', (e) => {
   }
 
   canvas.setPointerCapture(e.pointerId);
-  autoWalkStates[activeIndex] = null; // manual control always takes over from auto-walk
+  // Manual control always takes over from auto-walk; the pending celebration
+  // goes with it, since the walk it belonged to is no longer happening.
+  autoWalkStates[activeIndex] = null;
+  autoWalkFixtures[activeIndex] = null;
   drag.active = true;
   drag.targetPxX = p.x;
   drag.targetPxY = p.y;
@@ -319,11 +336,13 @@ function frame(now: number): void {
 
     const walk = autoWalkStates[i];
     if (walk && isAutoWalkDone(walk)) {
-      if (needStates[i].active !== null) {
+      const fixture = autoWalkFixtures[i];
+      if (needStates[i].active !== null && fixture) {
         resolveNeed(needStates[i], sessionMs);
-        celebrateInRoom(avatar.roomId, now);
+        celebrateResolution(fixture, avatar.roomId, now);
       }
       autoWalkStates[i] = null;
+      autoWalkFixtures[i] = null;
     }
   }
 

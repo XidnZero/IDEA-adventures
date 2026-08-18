@@ -1196,3 +1196,50 @@ One note on tooling: the `index.html` check reads the file through Vite's
 the app and the project has no `@types/node`, so a Node import typechecks
 fine under Vitest but breaks `tsc -b` — worth remembering, since `npm test`
 passing is not sufficient evidence that the build is clean.
+
+**2026-08-17 — R15's resolution routine was a no-op for two of the three
+needs.** `celebrateInRoom` searched the room where the need was met for a
+parent NPC and bounced it. Parents are authored only in `living` and
+`kitchen`; washroom and hygiene both resolve in a bathroom. So the one moment
+in the whole app that is unambiguously a success was acknowledged by nothing
+at all, two times out of three — the need bubble simply vanished.
+
+Found by reading `main.ts` for cross-subsystem interactions rather than by
+testing a module: every piece involved was individually correct, and the gap
+only exists in the relationship between where parents are authored and where
+fixtures are. Confirmed against the real world data before changing anything
+(a throwaway diagnostic test dumping parent rooms against each need's
+resolution room).
+
+`findNeedTarget` now returns a `fixture` reference — the anchor of the object
+the route leads to, in the room-local coordinates `tapResponse.ts` already
+keys on — carried back from the goal that won the BFS. `main.ts` keeps it
+alongside the in-flight auto-walk (`autoWalkFixtures`) and
+`celebrateResolution` bounces that fixture *unconditionally*, before looking
+for a parent. The parent bounce is unchanged where a parent exists. Cancelling
+an auto-walk clears the pending fixture too, so a celebration can't leak onto
+a later, unrelated walk.
+
+The fixture bounce reuses R16's existing primitive rather than inventing a
+second visual language, which is the least I could do here without making a
+product decision. It is a floor, not an answer — logged as open question 11,
+since "parent comes over" plausibly wants parents authored into more rooms,
+or something warmer at the avatar, and is probably best decided alongside
+audio.
+
+Verified live, because this is precisely the path no unit test reaches:
+temporarily shortened the need intervals and the hygiene threshold, added a
+temporary hook recording every `celebrateResolution` call, and drove the app
+through four full need cycles with a second hook exposing the avatar's screen
+position so the need bubble could be tapped accurately (fixed screen
+coordinates missed it — the avatar moves and the camera pans). Result: one
+celebration on the kitchen fridge and **three on the `bath_wc_2` shower**,
+the parentless room where the old code did nothing, with zero console errors.
+Both hooks and all three constants reverted before committing; `git diff` on
+`config.ts` and a grep for the hook names confirm it.
+
+Six tests now cover the routine, including one asserting that at least one
+need still resolves in a parentless room — if the house ever gains a parent
+everywhere, that test fails loudly rather than quietly losing the coverage
+that matters. Mutation-checked by deleting the fixture bounce, which
+reintroduces the original bug and fails exactly one test.

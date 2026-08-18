@@ -193,3 +193,33 @@ door graph was settled.
 The confirmed door list leaves an unoccupied region in world-tile space
 between `main_hall`/`bath_wc_1` and `living`'s lower-right wall. Nothing
 requires filling it. Listed here only so it isn't rediscovered as a bug.
+
+---
+
+## 11. R15: what should "parent comes over" actually be?
+
+**Status:** the routine now always fires; what it *does* is still a
+placeholder reading.
+**Stand-in:** the fixture the child just used bounces, and a parent NPC in
+that room bounces too if there is one.
+
+R7 forbids NPC pathfinding, so a parent literally walking over is off the
+table — that was settled when R15 first shipped. But parents are only
+authored in `living` and `kitchen`, while washroom and hygiene both resolve
+in a bathroom, so the parent-only version acknowledged one need out of three
+and the other two resolved in silence. Bouncing the fixture fixes the
+silence using the primitive R16 interactables already use, rather than
+inventing a second visual language.
+
+That is a floor, not an answer. The open question is what the moment should
+feel like:
+
+- Author a parent into the bathrooms, so the existing parent response covers
+  every need? (A content decision about the house, and arguably odd.)
+- Keep parents where they are and let the fixture response stand alone?
+- Something warmer at the avatar — this is the one moment in the whole app
+  that is unambiguously a success, and it currently reads about the same as
+  tapping a lamp.
+
+Worth deciding alongside item 1 (audio), since a sound is probably the
+cheapest way to make this moment feel different from an ordinary tap.
