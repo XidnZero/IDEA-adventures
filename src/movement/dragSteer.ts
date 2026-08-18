@@ -15,11 +15,64 @@ export interface DragState {
   active: boolean;
   targetPxX: number;
   targetPxY: number;
+  // Which pointer owns this drag. A 2-3 year old presses with a whole hand
+  // (observed in the Phase 0 spike, see CLAUDE.md), which produces several
+  // pointers at once; without an owner, a second finger landing steals the
+  // steering and a second finger lifting cancels the walk while the first is
+  // still pressed down.
+  pointerId: number | null;
 }
 
 export function createDragState(): DragState {
-  return { active: false, targetPxX: 0, targetPxY: 0 };
+  return { active: false, targetPxX: 0, targetPxY: 0, pointerId: null };
 }
+/**
+ * Pointer ownership. A 2-3 year old presses with a whole hand (observed in
+ * the Phase 0 spike, CLAUDE.md), so several pointers arrive at once and leave
+ * in an arbitrary order. Without an owner, a second finger landing stole the
+ * steering and a second finger *lifting* cancelled the walk while the first
+ * was still pressed — the avatar stopped dead under a hand still on screen.
+ *
+ * These live here rather than inline in main.ts's event handler because they
+ * are rules about the drag's own state, and in a handler they were neither
+ * testable nor obviously a set that has to agree with itself.
+ */
+
+/** Claims the drag for this pointer. Returns false if another one owns it. */
+export function beginDrag(
+  drag: DragState,
+  pointerId: number,
+  targetPxX: number,
+  targetPxY: number,
+): boolean {
+  if (drag.active && drag.pointerId !== null && drag.pointerId !== pointerId) return false;
+  drag.active = true;
+  drag.pointerId = pointerId;
+  drag.targetPxX = targetPxX;
+  drag.targetPxY = targetPxY;
+  return true;
+}
+
+/** Steers, but only for the pointer that owns the drag. */
+export function updateDragTarget(
+  drag: DragState,
+  pointerId: number,
+  targetPxX: number,
+  targetPxY: number,
+): void {
+  if (!drag.active) return;
+  if (drag.pointerId !== null && drag.pointerId !== pointerId) return;
+  drag.targetPxX = targetPxX;
+  drag.targetPxY = targetPxY;
+}
+
+/** Ends the drag, but only for the pointer that started it. */
+export function endDrag(drag: DragState, pointerId: number): void {
+  if (drag.pointerId !== null && drag.pointerId !== pointerId) return;
+  drag.active = false;
+  drag.pointerId = null;
+}
+
 
 function isWalkablePx(world: World, px: number, py: number): boolean {
   return isWalkableWorldTile(world, Math.floor(px / TILE_PX), Math.floor(py / TILE_PX));

@@ -112,7 +112,7 @@ test('main.ts sparkles before it branches on what was tapped', () => {
   const sparkleAt = handler.indexOf('addSparkle(');
   expect(sparkleAt).toBeGreaterThan(-1);
 
-  for (const laterBranch of ['hitTestNeedBubble(', 'findRoomAtWorldTile(', 'drag.active = true']) {
+  for (const laterBranch of ['hitTestNeedBubble(', 'findRoomAtWorldTile(', 'beginDrag(']) {
     expect(
       handler.indexOf(laterBranch),
       `${laterBranch} should follow the sparkle`,

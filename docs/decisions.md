@@ -1243,3 +1243,48 @@ need still resolves in a parentless room — if the house ever gains a parent
 everywhere, that test fails loudly rather than quietly losing the coverage
 that matters. Mutation-checked by deleting the fixture bounce, which
 reintroduces the original bug and fails exactly one test.
+
+**2026-08-17 — Multi-pointer input: a second finger broke the drag, and
+`setPointerCapture` could silently kill a tap.** CLAUDE.md records that the
+Phase 0 spike observed "whole-hand taps and drags" from this age group. The
+pointer handlers tracked no pointer identity at all, so a whole hand produced
+several pointers and the last one to move or lift won.
+
+Reproduced in the built app before changing anything, by dispatching real
+`PointerEvent`s with distinct `pointerId`s: finger A presses and steers,
+finger B taps and lifts, and `drag.active` goes false with the avatar frozen
+at 0px of further movement — while finger A is still pressed. That is not an
+exotic case for a two-year-old; it is roughly what every press looks like.
+
+The same run surfaced a second, quieter bug: `canvas.setPointerCapture` throws
+`NotFoundError` when the pointer is already gone, and it was the *first*
+statement in the world-layer branch. A throw there aborted everything after
+it, so `drag.active` was never set and the tap did nothing at all — silently,
+because an exception inside an event listener has no visible effect. It now
+runs last and is wrapped; capture only improves tracking when a finger slides
+off the canvas, so failing it is harmless.
+
+Fixed by giving the drag an owner. `DragState` gained `pointerId`, and the
+three ownership rules moved out of the event handler into `dragSteer.ts` as
+`beginDrag` / `updateDragTarget` / `endDrag`: they are rules about the drag's
+own state, and inline in a handler they were neither testable nor obviously a
+set that has to agree with itself. Extra fingers still sparkle and still tap
+objects — no dead taps (R8) — they just cannot take over or end the steering.
+The mini-game overlay got the same treatment via `miniGamePointerId`, since a
+second finger lifting would otherwise drop the shape being dragged; it is
+cleared when the overlay closes so the next open doesn't inherit a stale
+owner.
+
+Re-ran the same reproduction after the fix: drag stays active, the avatar
+moves 52px while the first finger is still down, and zero console errors
+(previously one `NotFoundError` per press). Nine tests cover the rules,
+including a five-finger press released in scrambled order. Mutation-checked
+by making `endDrag` ignore its pointer argument, which restores the original
+bug and fails exactly the two tests that describe it.
+
+One knock-on: `tests/deadTaps.test.ts` searched the handler for the literal
+`drag.active = true` to prove the sparkle precedes the drag branch. The
+refactor renamed that to `beginDrag(`, so the marker was updated. Worth
+noting as a cost of positional tests — they are the right tool for "this must
+happen before that", but they are coupled to how the code reads, not just to
+what it does.

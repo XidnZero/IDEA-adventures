@@ -1,7 +1,13 @@
 import { loadWorld } from './world/loadWorld';
 import type { Avatar } from './avatar/avatar';
 import { AVATAR_PROFILES, createAvatar, tileCenterPx } from './avatar/avatar';
-import { createDragState, stepDragSteer } from './movement/dragSteer';
+import {
+  beginDrag,
+  createDragState,
+  endDrag,
+  stepDragSteer,
+  updateDragTarget,
+} from './movement/dragSteer';
 import { startAutoWalk, isAutoWalkDone, stepAutoWalk, type AutoWalkState } from './movement/autoWalk';
 import { advanceWalkPhase, updateAvatarRoomId } from './movement/shared';
 import { createCamera, updateCamera, type CameraState } from './engine/camera';
@@ -84,6 +90,9 @@ const poses: Pose[] = avatars.map(() => 'idle');
 // R17 mini-game shell: null = world is showing; otherwise the toybox-sort
 // overlay owns all rendering and pointer input until its exit icon is tapped.
 let miniGame: ToyboxSortState | null = null;
+// Which pointer is dragging a shape, for the same reason drag.pointerId
+// exists on the world layer.
+let miniGamePointerId: number | null = null;
 
 // R18/R19: lighting reads the device's real clock (see engine/dayNight.ts —
 // the *only* module allowed to do that). Recomputed every frame from
@@ -180,9 +189,16 @@ canvas.addEventListener('pointerdown', (e) => {
   if (miniGame) {
     if (hitTestExit(rect.width, screenX, screenY)) {
       miniGame = null;
+      miniGamePointerId = null;
       return;
     }
-    canvas.setPointerCapture(e.pointerId);
+    if (miniGamePointerId !== null && miniGamePointerId !== e.pointerId) return;
+    miniGamePointerId = e.pointerId;
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      // See the world-layer capture above: never fatal.
+    }
     // R8 applies inside the overlay too: a tap that lands on no shape would
     // otherwise do nothing at all. Only the exit glyph above is exempt, since
     // closing the overlay is already an unmistakable response.
@@ -243,14 +259,25 @@ canvas.addEventListener('pointerdown', (e) => {
     }
   }
 
-  canvas.setPointerCapture(e.pointerId);
+  // One pointer owns the drag (see beginDrag). Extra fingers still sparkle
+  // and still tap objects above, but must not steal the steering from the
+  // finger already doing it.
+  if (!beginDrag(drag, e.pointerId, p.x, p.y)) return;
+
   // Manual control always takes over from auto-walk; the pending celebration
   // goes with it, since the walk it belonged to is no longer happening.
   autoWalkStates[activeIndex] = null;
   autoWalkFixtures[activeIndex] = null;
-  drag.active = true;
-  drag.targetPxX = p.x;
-  drag.targetPxY = p.y;
+
+  // Capture last, and never fatally: it only improves tracking when the
+  // finger slides off the canvas, and it throws if the pointer is already
+  // gone. Called first (as it used to be), that throw aborted the rest of
+  // this handler and the tap did nothing at all.
+  try {
+    canvas.setPointerCapture(e.pointerId);
+  } catch {
+    // Tracking without capture still works; nothing here is load-bearing.
+  }
 });
 canvas.addEventListener('pointermove', (e) => {
   const rect = canvas.getBoundingClientRect();
@@ -266,25 +293,31 @@ canvas.addEventListener('pointermove', (e) => {
 
   if (gateOpen) return;
   if (miniGame) {
-    handleToyboxPointerMove(miniGame, screenX, screenY, rect.width, rect.height);
+    if (miniGamePointerId === null || e.pointerId === miniGamePointerId) {
+      handleToyboxPointerMove(miniGame, screenX, screenY, rect.width, rect.height);
+    }
     return;
   }
   if (!drag.active) return;
   const p = pointerToWorldPx(e.clientX, e.clientY);
-  drag.targetPxX = p.x;
-  drag.targetPxY = p.y;
+  updateDragTarget(drag, e.pointerId, p.x, p.y);
 });
-function releaseDrag(): void {
-  // Releasing the pointer always cancels an in-progress gate hold — it must
-  // stay pressed, unmoved, for the full duration.
+function releaseDrag(e: PointerEvent): void {
+  // Any pointer lifting cancels an in-progress gate hold, deliberately
+  // including a stray second finger — the gesture is meant to be a single
+  // sustained still press, and erring toward cancelling keeps the gate
+  // harder to open by accident (R20).
   gateHold = null;
   if (gateOpen) return;
   if (miniGame) {
+    if (miniGamePointerId !== null && e.pointerId !== miniGamePointerId) return;
+    miniGamePointerId = null;
     const rect = canvas.getBoundingClientRect();
     handleToyboxPointerUp(miniGame, rect.width, rect.height, performance.now());
     return;
   }
-  drag.active = false;
+  // Only the finger that started the drag can end it (see endDrag).
+  endDrag(drag, e.pointerId);
 }
 canvas.addEventListener('pointerup', releaseDrag);
 canvas.addEventListener('pointercancel', releaseDrag);
