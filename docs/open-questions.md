@@ -40,13 +40,25 @@ animated sprite sheets + mini-games are all live.
 **Stand-in:** plain canvas, no game framework. Vite/TypeScript is bundling
 and dev-server tooling only.
 
-All three of those conditions are now met and nothing has hit a ceiling: the
-whole house renders every frame with a cheap AABB cull, and the full test
-suite plus a production build run in well under a second. The honest reading
-is that canvas is still fine and the trigger for revisiting should be a
-concrete symptom (frame drops on the actual target device), not a milestone.
-**Recommendation: keep canvas; re-open only on measured slowness on real
-hardware.**
+All three of those conditions are now met and nothing has hit a ceiling.
+Measured in the built app (Chromium, 1400x900, CPU throttled to stand in for
+a weaker tablet, 3s samples):
+
+| scenario | CPU throttle | median frame | p95 | worst |
+| --- | --- | --- | --- | --- |
+| idle | 1x | 16.7ms | 16.8ms | 16.8ms |
+| idle | 4x | 16.7ms | 16.7ms | 16.8ms |
+| idle | 8x | 33.3ms | 33.4ms | 50.0ms |
+| walking + camera panning | 6x | 16.7ms | 33.4ms | 33.4ms |
+
+A locked 60fps holds until roughly 4x slower than a desktop, and degrades to
+a steady 30fps at 8x rather than falling apart. Tap-to-pixel latency measured
+separately is 5-17ms — one frame, against R16's 150ms budget.
+
+So the honest reading is that canvas is still fine, and the trigger for
+revisiting should be a concrete symptom on the actual target hardware, not a
+milestone. **Recommendation: keep canvas; re-open only if the real device
+shows frame drops.** The numbers above are the baseline to compare against.
 
 ---
 

@@ -124,6 +124,20 @@ test('main.ts sparkles before it branches on what was tapped', () => {
   expect(line.trim().startsWith('addSparkle(')).toBe(true);
 });
 
+test('the tap response is synchronous — nothing defers it', () => {
+  // R16's criterion is a <150ms response. Measured in the built app it is
+  // one frame (5-17ms), and it stays that way only as long as the handler
+  // does its work immediately: a setTimeout, an await, or a promise between
+  // the tap and the state change would push the response into a later frame
+  // for no visible reason. This guards the property, not the number.
+  const main = readSources().find((f) => f.path === 'main.ts')!.code;
+  const start = main.indexOf("addEventListener('pointerdown'");
+  const end = main.indexOf("addEventListener('pointermove'");
+  const handler = main.slice(start, end);
+
+  expect(handler).not.toMatch(/setTimeout|setInterval|await |\.then\(|queueMicrotask/);
+});
+
 test('the mini-game overlay sparkles on taps that hit no shape', () => {
   const main = readSources().find((f) => f.path === 'main.ts')!.code;
   const start = main.indexOf("addEventListener('pointerdown'");

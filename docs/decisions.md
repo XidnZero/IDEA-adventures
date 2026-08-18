@@ -1057,3 +1057,47 @@ fully offline and the page reloaded: the canvas renders (sampled 24 points
 across it, all lit), real SVG art decodes, the lamp glow and night tint are
 correct, zero failed requests, zero console errors. Worth repeating whenever
 the build tooling changes, since the failure mode is silent.
+
+**2026-08-17 — R1's camera rules are now tested, and R16's latency budget is
+measured rather than assumed.** The camera had no test at all, despite being
+governed by one of CLAUDE.md's hard prohibitions ("No parallax / camera drift
+/ background scroll. Camera only moves when the avatar moves"). Those are
+easy to break subtly — an ease that never quite converges reads as drift, and
+anything time-driven reads as parallax.
+
+`tests/camera.test.ts` pins: ten seconds of frames with the avatar frozen
+leaves the camera byte-identical; movement *within* the dead zone likewise
+moves it not at all; crossing the dead-zone edge does pan, and only on the
+axis that was crossed; panning is framerate-independent (the same elapsed
+time in 10 long frames and 50 short ones lands within a pixel); the viewport
+never escapes the composited house bounds from any corner; a house smaller
+than the viewport is centred rather than clamped to a backwards range; and
+`camera.ts` references no clock, no lighting and no randomness at all —
+parallax and background scroll both come from a camera taking input it has no
+business taking.
+
+One assertion had to be written more carefully than expected. The pan is an
+exponential ease, so after settling it keeps moving by ~3e-10 px per frame
+and never lands exactly. That is *not* the drift the rule is about: the
+stationary-avatar case is exactly still, because a still avatar makes
+`desired === current` so nothing is added at all. The settle assertion is
+sub-pixel; the stillness assertion is exact. Worth stating plainly, because
+"camera never moves" and "camera converges" are different claims and only one
+of them is achievable with an ease.
+
+Measured R16's "<150ms response" in the built app for the first time rather
+than assuming it: dispatching the tap in-page (so the harness's own input
+plumbing isn't counted, which isn't what the criterion is about) and watching
+the canvas until a pixel changes gives **5-17ms across 8 samples, worst
+16.8ms** — one frame, about 9x inside budget. Added a structural guard rather
+than a timing test, since a number measured on a desktop is not a useful
+assertion: the pointerdown handler must contain no `setTimeout`, `await`,
+`.then` or `queueMicrotask`, which is the property that keeps the response in
+the same frame.
+
+Also gathered frame-time data under CPU throttling and recorded it in
+`open-questions.md` item 2 (the engine question), which explicitly asks for
+measured evidence rather than a milestone. A locked 60fps holds to ~4x
+slower than this desktop and degrades to a steady 30fps at 8x rather than
+falling apart. That doesn't answer the question — the real device does — but
+it gives it a baseline to be compared against instead of an opinion.
