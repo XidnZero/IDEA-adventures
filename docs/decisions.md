@@ -1022,3 +1022,38 @@ Two new tests cover the behaviour itself: standing in either toilet's own
 room must route to *that* room, and — implementation-independently — the
 chosen path must be no longer than the best path to any fixture found by
 brute force. Both fail against the old hardcoded version.
+
+**2026-08-17 — "No network calls during play" is now tested, and was being
+violated.** CLAUDE.md lists it as a hard prohibition and phase-1.md's R22
+criterion says "zero network calls at play time", but nothing checked it.
+`tests/localOnly.test.ts` now scans every module for network APIs (`fetch`,
+`XMLHttpRequest`, `WebSocket`, `EventSource`, `sendBeacon`, remote dynamic
+import), for any `http(s)://` literal, and for analytics/ads/account
+vocabulary. `engine/registerServiceWorker.ts` is the single exemption, and
+even it is asserted to do nothing but register the worker and post it a
+message — the fetching lives in `public/sw.js`, whose whole job is making the
+app work *without* a network.
+
+The structural test passed immediately. A live check did not. Recording every
+request during a play session in the built app showed **18 network requests
+fired mid-play**: `requestAsset` probes an art slot the first time it is
+asked for, and an avatar slot is keyed by `(layer, pose, facing)`, so
+turning a corner or starting to walk requested six new URLs right then.
+Object art never had this problem only by accident — every room renders on
+frame one, so all of it resolves during load.
+
+Fixed by resolving the whole avatar slot matrix at startup
+(`warmAvatarAssets`, `avatarAssetNames` in `avatar/sprite.ts`), which makes
+avatars behave the same way objects already did. The same generated list is
+handed to `precacheArt`, so the slots are also available offline from the
+first visit and a new pose or facing can't be covered in one place but not
+the other — there's a test asserting the matrix is complete and that both
+call sites use it. Re-ran the live check: zero requests during play.
+
+Also re-verified R21/R22 end-to-end while here, which was overdue — the
+earlier entry flagged that its own offline verification "cannot be assumed
+still valid" after a Vite upgrade silently broke it once. With the browser
+fully offline and the page reloaded: the canvas renders (sampled 24 points
+across it, all lit), real SVG art decodes, the lamp glow and night tint are
+correct, zero failed requests, zero console errors. Worth repeating whenever
+the build tooling changes, since the failure mode is silent.

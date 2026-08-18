@@ -8,7 +8,7 @@ import { createCamera, updateCamera, type CameraState } from './engine/camera';
 import { findRoomAtWorldTile, getWorldBoundsPx, roomTileToWorldTile } from './world/worldGrid';
 import { renderRoom } from './render/renderRoom';
 import { renderAvatar } from './render/renderAvatar';
-import type { Pose } from './avatar/sprite';
+import { avatarAssetNames, warmAvatarAssets, type Pose } from './avatar/sprite';
 import { renderNeedBubble, hitTestNeedBubble } from './render/renderNeedBubble';
 import { hitTestProfileSwitcher, renderProfileSwitcher } from './ui/profileSwitcher';
 import { createTapResponseState, getTapResponseOffsetPx, triggerTapResponse } from './interaction/tapResponse';
@@ -41,9 +41,15 @@ const world = loadWorld();
 const worldBounds = getWorldBoundsPx(world);
 
 // Make this session's art available offline from the very first visit (see
-// precacheArt). Derived from the world's own legend, so new art in
-// objects.yaml is covered automatically.
-precacheArt([...new Set(Object.values(world.objects).map((o) => o.name))]);
+// precacheArt). Derived from the world's own legend and the avatar slot
+// matrix, so new art in objects.yaml is covered automatically.
+const avatarSlots = AVATAR_PROFILES.flatMap((p) => avatarAssetNames(p.id));
+precacheArt([...new Set(Object.values(world.objects).map((o) => o.name)), ...avatarSlots]);
+
+// Resolve every avatar slot now rather than the first time each pose/facing
+// combination appears — otherwise those lookups happen mid-play, which
+// CLAUDE.md forbids ("no network calls during play"). See sprite.ts.
+warmAvatarAssets(AVATAR_PROFILES.map((p) => p.id));
 
 const spawnRoom = world.rooms[SPAWN_ROOM];
 const spawnWorldTile = roomTileToWorldTile(spawnRoom, spawnRoom.spawn[0], spawnRoom.spawn[1]);
