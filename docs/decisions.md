@@ -1101,3 +1101,45 @@ measured evidence rather than a milestone. A locked 60fps holds to ~4x
 slower than this desktop and degrades to a steady 30fps at 8x rather than
 falling apart. That doesn't answer the question — the real device does — but
 it gives it a baseline to be compared against instead of an opinion.
+
+**2026-08-17 — Movement collision and the R17 mini-game rules are now tested,
+both verified by mutation rather than by passing.** Two of the largest
+untested surfaces left. Both test suites passed on their first run, which
+after the invisible-walk-animation episode is not evidence of anything, so
+each was checked by deliberately breaking the code it covers:
+
+- Making `avatarFits` always return true fails the two drag-steer tests and
+  nothing else.
+- Changing the drop rule from `bin && bin.color === s.color` to `bin` (any
+  bin accepts any shape) fails three mini-game tests.
+
+Restoring each brings the suite back to green. Worth doing routinely on any
+test written for code that already works — a test that has never once failed
+has never demonstrated it can.
+
+`tests/movementCollision.test.ts` is a property test over the *real* house
+rather than a fixture, so it covers the geometry that actually ships,
+including the kitchen's stepped corner and the tiles behind every piece of
+furniture. From every walkable tile whose body-box is clear, it shoves the
+avatar hard in all eight directions for twenty frames at the largest `dt`
+main.ts will ever pass (0.05s, clamped there), and asserts the avatar's whole
+body — not just its centre — stays on walkable ground throughout. It also
+pins that drag-steering *slides* along a wall rather than sticking (the whole
+point of the axis-separated step: a toddler dragging roughly toward a doorway
+still gets through), that auto-walk stays on walkable ground for its entire
+route and actually arrives, that the largest possible single step is smaller
+than the avatar's radius so tunnelling is arithmetically impossible, and that
+a path home exists from every tile in the house.
+
+`tests/miniGame.test.ts` holds down the no-fail rules in the one place where
+"just a little feedback that you got it wrong" would feel natural to add. A
+wrong drop and a drop on empty space must produce *identical* outcomes —
+if a miss looked different from a mis-sort, the difference would be readable
+as "that one was wrong". Two hundred consecutive wrong drops change nothing
+at all. Completing the set reshuffles a fresh one, five rounds in a row, with
+no accumulating state. The exit stays live mid-drag and during the all-done
+pause. The state and shape field sets are pinned so a score or attempt
+counter cannot be added quietly, the module is asserted to render no text,
+and the drop rule is asserted to compare colour only — if shape type ever
+joined it, a child matching on colour alone would start getting drops
+rejected, which is the closest thing to a wrong answer this game could grow.
