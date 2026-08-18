@@ -1143,3 +1143,56 @@ counter cannot be added quietly, the module is asserted to render no text,
 and the drop rule is asserted to compare colour only — if shape type ever
 joined it, a child matching on colour alone would start getting drops
 rejected, which is the closest thing to a wrong answer this game could grow.
+
+**2026-08-17 — Every remaining CLAUDE.md hard prohibition, and the `.room`
+authoring constraints, now have tests.** This completes the pass: each rule
+in the prohibitions list is now either enforced by a test or explicitly
+recorded in `open-questions.md` as a decision that isn't mine.
+
+`tests/prohibitions.test.ts` covers the ones that had nothing:
+
+- **No text, anywhere.** The app is entirely code-drawn, so the whole rule
+  reduces to "no module may call the canvas text API" — asserted across all
+  of `src/`, currently zero hits. `index.html` is checked separately, since a
+  label there would bypass every canvas-level check; its body renders no
+  visible text at all. (An alphabet mini-game, R17/P1, would be a deliberate
+  exception to revisit here. None exists.)
+- **No meters/bars/numbers/words for needs.** Checked against the four
+  modules that present a need: no text, no numeric formatting, and — the one
+  that matters most — no derivation of a level, percentage, ratio or fraction
+  from a need at all. A bar is the easy accidental version of this, because
+  it looks like ordinary UI in a diff. Separately, the need bubble is
+  asserted to choose its icon by *which* need is active and never by how long
+  it has been active, which would be severity by another name.
+- **No persistence.** Nothing stores anything today, so "closing the app
+  freezes all state" holds trivially. The test exists so that adding storage
+  becomes a deliberate act: a saved timestamp plus a restore is exactly how
+  offline decay gets reintroduced, and whoever adds one has to come here and
+  confront the rule first.
+- **One-tap exit from every full-screen state.** Positional, like the sparkle
+  check: the gate closes on any tap before anything can consume it, and the
+  mini-game's exit is hit-tested before its own input handling so a shape
+  can't shadow it.
+- **No scores, currency, unlocks, streaks or progression** vocabulary.
+
+`tests/roomAuthoring.test.ts` covers the three architecture constraints the
+`.room` format exists to enforce. Walkability is shown to be *derived*: a 2x1
+table authored as a single `K` blocks two tiles, and the second is never
+written down anywhere. The legend is shown to be *global*: an unknown
+character is an error rather than a silently ignored tile, which is precisely
+what stops a room file introducing a symbol of its own. And the parser's
+authoring errors are pinned — footprint overlapping a wall, a door or another
+object; a grid disagreeing with its own header size; an unwalkable spawn; a
+missing `pos`. Mis-sized grids in particular were a repeated failure mode
+across layout revisions and are invisible when reading ASCII by eye.
+
+Both suites were mutation-checked, per the practice established in the entry
+above: disabling the footprint-overlap check fails exactly the test that
+covers it, and adding a `<p>Tap to play!</p>` to `index.html` fails exactly
+the page-text test. Restoring each returns the suite to green.
+
+One note on tooling: the `index.html` check reads the file through Vite's
+`?raw` import rather than `node:fs`. The tests share `vite.config.ts` with
+the app and the project has no `@types/node`, so a Node import typechecks
+fine under Vitest but breaks `tsc -b` — worth remembering, since `npm test`
+passing is not sufficient evidence that the build is clean.
