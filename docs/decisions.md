@@ -1288,3 +1288,45 @@ refactor renamed that to `beginDrag(`, so the marker was updated. Worth
 noting as a cost of positional tests — they are the right tool for "this must
 happen before that", but they are coupled to how the code reads, not just to
 what it does.
+
+**2026-08-17 — The no-offline-decay rule was enforced by one unnamed
+`Math.min` and nothing tested it.** CLAUDE.md's first hard prohibition is
+"No offline decay. Needs advance ONLY while the app is foregrounded and open."
+Two things made that true, and only one of them was obvious.
+
+The obvious half: the clock is advanced by rAF frame deltas, never by reading
+a wall clock, and rAF stops firing when the page is hidden — so a closed or
+backgrounded app contributes nothing. That half was already covered by
+`clockSeparation.test.ts`.
+
+The half nobody was watching: `const dt = Math.min(0.05, (now - lastTime) / 1000)`,
+inline in the frame loop. When rAF resumes after an hour in the background it
+hands over one enormous frame, and without that clamp the session clock would
+jump a full hour forward in a single step. Deleting one `Math.min` would have
+reintroduced offline decay by the back door, and every existing test would
+still have passed — the clock would still be rAF-driven and still never touch
+`Date`.
+
+Extracted to `src/engine/sessionClock.ts`: `createSessionClock` /
+`tickSessionClock`, with `MAX_FRAME_SECONDS` named and the reasoning written
+down. The arithmetic is trivial; it lives in its own module because it
+carries a prohibition. Also tightened while moving it — the first frame now
+contributes zero (page-load time is not play time; previously it measured
+against a `performance.now()` taken at module scope) and the delta is clamped
+at both ends so a backwards timestamp can't rewind the clock.
+
+Nine tests. The behavioural one is the point: 500 rounds of "ten minutes
+closed, one frame open" cannot make a need fire, because 500 clamped frames
+add up to 25 seconds against a three-minute minimum interval. Mutation-checked
+by deleting the clamp, which fails three tests including that one.
+
+One connection worth recording, now that the bound has a name: movement
+depends on it too. Avatar speed x `MAX_FRAME_SECONDS` must stay below the
+avatar's radius or a slow frame steps straight through a wall — asserted in
+both `movementCollision.test.ts` and here. Raising the clamp to smooth over
+jank would silently make walls permeable, so it is not a free knob.
+
+Verified live after the refactor, since the frame loop is the one thing every
+other system hangs off: 60fps median, the avatar visibly walks and stops on
+release (screenshot pair plus a dense pixel sample of the band it crosses),
+zero console errors.

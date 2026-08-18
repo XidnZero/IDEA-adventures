@@ -22,6 +22,7 @@ import { addSparkle, createSparkleState, renderSparkles } from './interaction/sp
 import { createNeedState, advanceNeedState, resolveNeed, type AvatarNeedState } from './needs/needState';
 import { findNeedTarget, type FixtureRef } from './needs/needTargets';
 import { SPAWN_ROOM, TILE_PX } from './engine/config';
+import { createSessionClock, tickSessionClock } from './engine/sessionClock';
 import {
   createToyboxSort,
   handleToyboxPointerDown,
@@ -76,8 +77,11 @@ const sparkles = createSparkleState();
 // different things.
 const miniGameSparkles = createSparkleState();
 
-let sessionMs = 0; // foreground play-time clock only (R13/R19) — never Date.now().
-const needStates: AvatarNeedState[] = avatars.map(() => createNeedState(sessionMs));
+// Foreground play-time clock (R13/R19). Never Date.now(), and every frame
+// delta is clamped — see engine/sessionClock.ts, which is where the
+// no-offline-decay rule is actually enforced.
+const sessionClock = createSessionClock();
+const needStates: AvatarNeedState[] = avatars.map(() => createNeedState(sessionClock.ms));
 const autoWalkStates: Array<AutoWalkState | null> = avatars.map(() => null);
 // The fixture each in-flight auto-walk is heading for, kept alongside it so
 // the R15 celebration can fire on the object actually used.
@@ -323,11 +327,12 @@ canvas.addEventListener('pointerup', releaseDrag);
 canvas.addEventListener('pointercancel', releaseDrag);
 canvas.addEventListener('pointerleave', releaseDrag);
 
-let lastTime = performance.now();
 function frame(now: number): void {
-  const dt = Math.min(0.05, (now - lastTime) / 1000);
-  lastTime = now;
-  sessionMs += dt * 1000; // foreground play-time clock only (R13/R19) — never Date.now().
+  // rAF stops firing while the page is hidden, so a backgrounded or closed
+  // app contributes nothing; the clamp inside caps what a single resumed
+  // frame can add. Both halves of R13 live in sessionClock.ts.
+  const dt = tickSessionClock(sessionClock, now);
+  const sessionMs = sessionClock.ms;
 
   // R18/R19: recomputed from the device's real clock every frame, entirely
   // independent of `sessionMs` above — see engine/dayNight.ts.
