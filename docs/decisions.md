@@ -1330,3 +1330,43 @@ Verified live after the refactor, since the frame loop is the one thing every
 other system hangs off: 60fps median, the avatar visibly walks and stops on
 release (screenshot pair plus a dense pixel sample of the band it crosses),
 zero console errors.
+
+**2026-08-17 — Resize/rotation probed and found sound; R6 and R20 tested,
+completing R-item coverage.**
+
+Rotation was worth checking because a tablet will certainly be turned, and
+nothing had ever exercised it. Probed the built app through portrait tablet →
+landscape → small phone → back to portrait, with a drag in the middle: the
+backing store tracks CSS size × devicePixelRatio at every step, the canvas
+keeps painting (87-100% of sampled pixels non-black throughout), interaction
+still works afterwards, and there are zero console errors. No change needed —
+recording the negative result so the next person doesn't re-derive it. The
+reason it holds is that `updateCamera` takes the viewport as an argument
+every frame rather than caching it at construction, so a size change is
+absorbed on the next frame with no special handling.
+
+`tests/profileAndGate.test.ts` covers the last two R-items without tests.
+They belong together: both are touch surfaces on a screen shared with a
+2-3 year old, and they pull in opposite directions — the portraits have to be
+easy to hit, the gate has to be nearly impossible to hit by accident.
+
+For R6, the portraits are measured by scanning the hit-test rather than by
+reading the constants, so the assertion is about the actual target a finger
+meets (≥110px across, comfortably distinct). The load-bearing test is that
+the switch branch in `main.ts` may set `activeIndex` and drop the current
+drag and *nothing else*: no repositioning, no need reset, no cancelling the
+other child's auto-walk. That is what "shared world state, no reset on
+switch" means operationally, and it is the kind of thing a later convenience
+line would quietly break.
+
+For R20, the geometry is pinned to the bottom-right corner, and — more
+usefully — the gate zone is checked pixel by pixel against both other touch
+surfaces (the portraits top-left, the mini-game exit top-right) to prove no
+overlap at any point. The gesture constants are asserted to stay in the range
+that makes them non-discoverable, and the side-channel property is pinned
+positionally: starting a hold must not `return` early, so a tap in that
+corner still does exactly what it would anywhere else, and the gate can only
+open from the frame loop after the full duration.
+
+Mutation-checked by widening `GATE_ZONE_PX` to 900, which fails exactly the
+two geometry tests.
